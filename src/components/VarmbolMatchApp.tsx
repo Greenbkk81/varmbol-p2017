@@ -7,6 +7,8 @@ import {
   Clock,
   LayoutGrid,
   ListFilter,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   Plus,
@@ -104,6 +106,7 @@ const STORAGE_KEYS = {
   sound: "varmbol_p2017_sound_v1",
   syncMode: "varmbol_p2017_sync_mode_v1",
   deviceId: "varmbol_p2017_device_id_v1",
+  focusMode: "varmbol_p2017_focus_mode_v1",
 };
 
 type SyncMode = "control" | "follow";
@@ -416,6 +419,7 @@ export function VarmbolMatchApp() {
 
   const [newPlayerName, setNewPlayerName] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const [syncMode, setSyncMode] = useState<SyncMode>("control");
   const [syncUpdatedAt, setSyncUpdatedAt] = useState<number | null>(null);
@@ -475,6 +479,12 @@ export function VarmbolMatchApp() {
       const rawSound = localStorage.getItem(STORAGE_KEYS.sound);
       if (rawSound === "0") setSoundEnabled(false);
 
+      const rawFocus = localStorage.getItem(STORAGE_KEYS.focusMode);
+      const urlFocus = new URLSearchParams(window.location.search).get("focus");
+      if (urlFocus === "1" || urlFocus === "true" || rawFocus === "1") {
+        setFocusMode(true);
+      }
+
       const rawHistory = localStorage.getItem(STORAGE_KEYS.history);
       if (rawHistory) {
         const parsedHistory = JSON.parse(rawHistory) as SavedMatchSummary[];
@@ -526,6 +536,15 @@ export function VarmbolMatchApp() {
       // ignore
     }
   }, [soundEnabled, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(STORAGE_KEYS.focusMode, focusMode ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [focusMode, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -1308,11 +1327,29 @@ export function VarmbolMatchApp() {
       .concat(matchState.goals ?? [])
   );
 
+  function handleToggleFocusMode() {
+    setFocusMode((prev) => {
+      const next = !prev;
+      if (next) {
+        setActiveTab("match");
+        setPitchViewMode("pitch");
+      }
+      return next;
+    });
+  }
+
   return (
-    <div className="min-h-screen flex flex-col pb-36 select-none">
+    <div
+      className={
+        focusMode && activeTab === "match"
+          ? "h-[100dvh] overflow-hidden flex flex-col bg-[#030914] select-none"
+          : "min-h-screen flex flex-col pb-36 select-none"
+      }
+    >
       {/* ============================================================
           CHAMPIONSHIP MANAGER TOP TITLE BAR & NAVIGATION
          ============================================================ */}
+      {(!focusMode || activeTab !== "match") && (
       <header className="sticky top-0 z-30 bg-[#050e1d]/95 backdrop-blur-md border-b-2 border-[#facc15]/80 shadow-[0_6px_30px_rgba(0,0,0,0.85)]">
         <div className="cm-header-bar px-3 py-2">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
@@ -1423,6 +1460,20 @@ export function VarmbolMatchApp() {
 
               <button
                 type="button"
+                onClick={handleToggleFocusMode}
+                className={`px-2 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-1 transition active:scale-95 ${
+                  focusMode
+                    ? "bg-[#facc15] text-slate-950 border-yellow-200"
+                    : "bg-[#040d1a]/80 border-sky-300/30 text-sky-200 hover:text-white"
+                }`}
+                title="Fokusläge: klocka, plan och bänk på en enda skärm utan scroll"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Fokus</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setSoundEnabled((s) => !s)}
                 className="p-2 rounded bg-[#040d1a]/80 border border-sky-300/30 text-sky-200 hover:text-white active:scale-95"
                 title={soundEnabled ? "Visselsignal på" : "Ljud av"}
@@ -1495,9 +1546,16 @@ export function VarmbolMatchApp() {
           </button>
         </div>
       </header>
+      )}
 
-      <main className="max-w-4xl w-full mx-auto px-2.5 sm:px-4 pt-3 flex-1 space-y-3">
-        {isFollowing && (
+      <main
+        className={
+          focusMode && activeTab === "match"
+            ? "max-w-4xl w-full mx-auto px-1.5 py-1.5 flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden"
+            : "max-w-4xl w-full mx-auto px-2.5 sm:px-4 pt-3 flex-1 space-y-3"
+        }
+      >
+        {isFollowing && !focusMode && (
           <div className="rounded-lg bg-emerald-400/15 border border-emerald-400/40 px-3 py-1.5 flex items-center justify-between gap-2 font-mono-cm text-xs text-emerald-200">
             <span className="truncate">
               Följer live — klockan och bytena styrs från en annan telefon
@@ -1517,7 +1575,424 @@ export function VarmbolMatchApp() {
         {/* ============================================================
             FLIK 1: CHAMPIONSHIP MANAGER MATCH ENGINE & 2D PITCH
            ============================================================ */}
-        {activeTab === "match" && (
+        {activeTab === "match" &&
+          (focusMode ? (
+            <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
+              {/* Kompakt topp-rad: Klocka, Mål, Start/Paus, Ångra, Full vy */}
+              <section className="cm-bevel rounded-lg px-2 py-1.5 flex items-center justify-between gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="px-1.5 py-0.5 rounded bg-[#005cb9] text-[10px] font-mono-cm font-bold uppercase text-white shrink-0">
+                    P{matchState.currentPeriod}/{matchState.config.periods}
+                  </span>
+                  <span
+                    className={`font-mono-cm text-xl font-extrabold tabular-nums leading-none shrink-0 ${
+                      isPeriodOvertime
+                        ? "text-[#facc15] animate-pulse"
+                        : matchState.status === "running"
+                        ? "text-emerald-400"
+                        : "text-white"
+                    }`}
+                  >
+                    {formatDurationMmSs(periodElapsedMs)}
+                  </span>
+                </div>
+
+                {/* Kompakt ställning VFC : Motståndare */}
+                <div className="flex items-center gap-1 bg-[#040a14] border border-sky-400/25 rounded px-1.5 py-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleRemoveOurGoal}
+                    aria-label="Ta bort senaste Värmbolsmål"
+                    className="w-5 h-5 rounded bg-slate-800 text-slate-300 text-xs font-bold"
+                  >
+                    -
+                  </button>
+                  <span className="font-mono-cm text-base font-extrabold text-sky-300 px-0.5">
+                    {matchState.ourScore}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddOurGoal}
+                    aria-label="Värmbols mål"
+                    className="w-5 h-5 rounded bg-[#005cb9] text-white text-xs font-bold"
+                  >
+                    +
+                  </button>
+                  <span className="font-mono-cm text-slate-500 font-bold text-xs px-0.5">
+                    :
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveOpponentGoal}
+                    aria-label="Ta bort senaste insläppta mål"
+                    className="w-5 h-5 rounded bg-slate-800 text-slate-300 text-xs font-bold"
+                  >
+                    -
+                  </button>
+                  <span className="font-mono-cm text-base font-extrabold text-amber-300 px-0.5">
+                    {matchState.opponentScore}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddOpponentGoal}
+                    aria-label="Insläppt mål"
+                    className="w-5 h-5 rounded bg-slate-700 text-white text-xs font-bold"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleToggleClock}
+                    className={`py-1 px-2 rounded font-display font-extrabold text-xs uppercase tracking-wide flex items-center gap-1 border active:scale-95 ${
+                      matchState.status === "running"
+                        ? "bg-[#facc15] text-slate-950 border-yellow-200"
+                        : "bg-emerald-500 text-slate-950 border-emerald-300"
+                    }`}
+                  >
+                    {matchState.status === "running" ? (
+                      <>
+                        <Pause className="w-3.5 h-3.5 fill-slate-950" />
+                        <span>Paus</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-slate-950" />
+                        <span>
+                          {periodElapsedMs === 0
+                            ? `P${matchState.currentPeriod}`
+                            : "Kör"}
+                        </span>
+                      </>
+                    )}
+                  </button>
+
+                  {matchState.undoStack.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleUndo}
+                      className="p-1.5 rounded bg-slate-900 text-[#facc15] border border-[#facc15]/40 active:scale-95"
+                      title={`Ångra: ${matchState.undoStack[0].label}`}
+                    >
+                      <Undo2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleToggleFocusMode}
+                    className="px-1.5 py-1 rounded bg-[#facc15] text-slate-950 border border-yellow-200 font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-1 active:scale-95"
+                    title="Gå tillbaka till full vy"
+                  >
+                    <Minimize2 className="w-3 h-3" />
+                    <span>Full</span>
+                  </button>
+                </div>
+              </section>
+
+              {/* Tunn verktygsrad på en rad: Förslag 1x–4x, MV-krage, Formation, Styr/Följ */}
+              <section className="cm-bevel rounded-lg px-2 py-1 flex items-center justify-between gap-1 shrink-0">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-display font-extrabold uppercase text-[#facc15]">
+                    Byt:
+                  </span>
+                  {[1, 2, 3, 4].map((count) => {
+                    const disabled = count > maxMultiSubCount;
+                    const active =
+                      suggestionBanner !== null && suggestionCount === count;
+                    return (
+                      <button
+                        key={count}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => handleSuggestSubs(count)}
+                        className={`px-2 py-0.5 rounded font-mono-cm font-extrabold text-[11px] border ${
+                          disabled
+                            ? "bg-slate-900/40 text-slate-600 border-white/5"
+                            : active
+                            ? "bg-[#facc15] text-slate-950 border-yellow-200"
+                            : "bg-[#0f2547] text-white border-sky-400/30"
+                        }`}
+                      >
+                        {count}x
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => setGkModalOpen(true)}
+                    className="px-1.5 py-0.5 rounded font-display font-bold uppercase text-[11px] bg-amber-400/15 text-[#facc15] border border-[#facc15]/40 flex items-center gap-1"
+                  >
+                    <Shield className="w-3 h-3 fill-[#facc15]" />
+                    <span>MV</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {matchState.config.format === "7v7" && (
+                    <select
+                      aria-label="Formation"
+                      value={currentFormation}
+                      onChange={(e) =>
+                        handleChangeFormation(
+                          e.target.value as TacticalFormation
+                        )
+                      }
+                      className="bg-[#040a14] border border-sky-400/30 rounded px-1.5 py-0.5 font-mono-cm font-bold text-[11px] text-white"
+                    >
+                      {(["1-4-1", "2-3-1", "2-2-2", "3-2-1"] as const).map(
+                        (fmt) => (
+                          <option key={fmt} value={fmt}>
+                            {fmt}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSetSyncMode(
+                        syncMode === "control" ? "follow" : "control"
+                      )
+                    }
+                    className={`px-1.5 py-0.5 rounded font-mono-cm font-extrabold text-[10px] uppercase border ${
+                      syncMode === "follow"
+                        ? "bg-emerald-400 text-slate-950 border-emerald-200"
+                        : "bg-[#040a14] text-sky-200 border-sky-400/30"
+                    }`}
+                  >
+                    {syncMode === "follow" ? "Följer" : "Styr"}
+                  </button>
+                </div>
+              </section>
+
+              {/* Flexibel 2D-plan som tar återstående höjd */}
+              <section className="flex-1 min-h-0 flex flex-col rounded-xl overflow-hidden border border-white/25 shadow-lg">
+                {goalPick ? (
+                  <GoalPickBar
+                    phase={goalPick.phase}
+                    scorerLabel={openGoalLabel(
+                      matchState.goals,
+                      goalPick.goalId
+                    )}
+                    onSkip={handleSkipGoalPick}
+                  />
+                ) : (
+                  <div className="bg-[#facc15] text-slate-950 px-2.5 py-1 flex items-center justify-between gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className="px-1 py-0.2 bg-slate-950 text-[#facc15] font-mono-cm font-extrabold text-[9px] rounded shrink-0">
+                        LIVE
+                      </span>
+                      <CoachTicker text={cmCommentaryText} />
+                    </div>
+                    {goalHeadline(matchState.goals) && (
+                      <span className="font-mono-cm font-extrabold text-[10px] shrink-0">
+                        {goalHeadline(matchState.goals)}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div className="cm-pitch-surface relative flex-1 min-h-0">
+                  <div className="absolute inset-2.5 border border-white/25 rounded pointer-events-none" />
+                  <div className="absolute inset-x-2.5 top-1/2 -translate-y-1/2 h-px bg-white/25 pointer-events-none" />
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 rounded-full border border-white/25 pointer-events-none" />
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/35 pointer-events-none" />
+                  <div className="absolute left-1/2 -translate-x-1/2 top-2.5 w-32 sm:w-44 h-8 border-b border-x border-white/25 pointer-events-none" />
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-2.5 w-36 sm:w-48 h-12 border-t border-x border-white/30 pointer-events-none" />
+
+                  {pitchMetrics.map((m, idx) => {
+                    const slotIdx =
+                      m.player.pitchSlotIndex ??
+                      (m.player.isGoalkeeper ? 0 : idx);
+                    const slot =
+                      formationSlots.find((s) => s.slotIndex === slotIdx) ||
+                      formationSlots[idx % formationSlots.length];
+                    const outOrderIndex = selectedOutIds.indexOf(m.player.id);
+                    const isSelectedOut = outOrderIndex !== -1;
+                    const pairedInPlayerId =
+                      isSelectedOut && selectedInIds[outOrderIndex]
+                        ? selectedInIds[outOrderIndex]
+                        : undefined;
+                    const pairedInPlayer = pairedInPlayerId
+                      ? matchState.players.find(
+                          (p) => p.id === pairedInPlayerId
+                        )
+                      : undefined;
+                    const metric = metricFor(m);
+
+                    return (
+                      <div
+                        key={m.player.id}
+                        style={{
+                          left: `${slot.xPct}%`,
+                          top: `${slot.yPct}%`,
+                        }}
+                        className="absolute -translate-x-1/2 -translate-y-1/2 z-20"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handlePitchPlayerClick(m.player.id)}
+                          className="relative flex flex-col items-center focus:outline-none active:scale-95 transition-transform"
+                        >
+                          {goalPick?.phase === "assist" &&
+                            openGoal?.scorerId === m.player.id && (
+                              <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-[1px] rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[8px] uppercase shadow">
+                                Mål
+                              </span>
+                            )}
+                          {!goalPick && isSelectedOut && (
+                            <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-[1px] rounded bg-orange-500 text-slate-950 font-mono-cm font-extrabold text-[8px] uppercase shadow">
+                              {pairedInPlayer
+                                ? `UT ${pairedInPlayer.name}`
+                                : `UT ${outOrderIndex + 1}`}
+                            </span>
+                          )}
+                          {!goalPick && !isSelectedOut && m.stintAlert && (
+                            <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-[1px] rounded bg-rose-500 text-white font-mono-cm font-extrabold text-[8px] uppercase shadow animate-pulse">
+                              BYT
+                            </span>
+                          )}
+                          <PlayerAvatar
+                            name={m.player.name}
+                            isGoalkeeper={m.player.isGoalkeeper}
+                            isSelected={isSelectedOut}
+                            selectionType="out"
+                            highlight={
+                              goalPick
+                                ? goalPick.phase === "assist" &&
+                                  openGoal?.scorerId === m.player.id
+                                  ? "shot"
+                                  : goalPick.phase === "scorer"
+                                  ? "shot"
+                                  : "pass"
+                                : undefined
+                            }
+                            size="sm"
+                            number={m.player.number}
+                            stat={metric.text}
+                            statTone={metric.tone}
+                          />
+                          <span
+                            className={`absolute left-1/2 top-[calc(100%+8px)] -translate-x-1/2 max-w-[4.2rem] truncate text-center font-display font-extrabold text-[10px] uppercase leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] ${
+                              isSelectedOut ? "text-orange-300" : "text-white"
+                            }`}
+                          >
+                            {m.player.number ? `${m.player.number} ` : ""}
+                            {m.player.name}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* Kompakt bytesrad direkt över bänken när spelare är valda */}
+              {(selectedOutIds.length > 0 || selectedInIds.length > 0) && (
+                <div className="rounded-lg bg-[#040c1a] border border-[#facc15] px-2.5 py-1.5 flex items-center justify-between gap-2 shrink-0">
+                  <div className="font-mono-cm text-[11px] truncate text-white">
+                    <span className="text-orange-300 font-bold">
+                      UT {selectedOutIds.length}
+                    </span>
+                    {" ⇄ "}
+                    <span className="text-emerald-300 font-bold">
+                      IN {selectedInIds.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={clearSubSelection}
+                      className="px-2 py-1 rounded bg-slate-800 text-slate-200 font-display font-bold uppercase text-[11px]"
+                    >
+                      Avbryt
+                    </button>
+                    {canSwapPitchPair && (
+                      <button
+                        type="button"
+                        onClick={handleSwapTwoPitchPlayers}
+                        className="px-2.5 py-1 rounded bg-[#005cb9] text-white font-display font-extrabold uppercase text-[11px] border border-sky-300"
+                      >
+                        Skifta plats
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!canExecuteSub}
+                      onClick={handleConfirmSubstitution}
+                      className={`px-3 py-1 rounded font-display font-extrabold text-xs uppercase flex items-center gap-1 ${
+                        canExecuteSub
+                          ? "bg-emerald-400 text-slate-950"
+                          : "bg-slate-800 text-slate-500 cursor-not-allowed"
+                      }`}
+                    >
+                      <ArrowLeftRight className="w-3.5 h-3.5" />
+                      <span>
+                        {selectedMismatch
+                          ? `Välj ${Math.max(
+                              selectedOutIds.length,
+                              selectedInIds.length
+                            )}`
+                          : "Genomför byte"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Avbytarbänken på en enda horisontell rad längst ner */}
+              <section className="cm-bevel rounded-xl px-2 py-2 shrink-0">
+                <div className="grid grid-cols-5 gap-1">
+                  {benchMetrics.map((m) => {
+                    const inOrderIndex = selectedInIds.indexOf(m.player.id);
+                    const isSelectedIn = inOrderIndex !== -1;
+                    const metric = metricFor(m);
+
+                    return (
+                      <button
+                        key={m.player.id}
+                        type="button"
+                        onClick={() => {
+                          if (goalPick) return;
+                          toggleSelectBenchPlayer(m.player.id);
+                        }}
+                        className="relative flex flex-col items-center min-w-0 focus:outline-none active:scale-95"
+                      >
+                        {!isSelectedIn && m.stintAlert && (
+                          <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1 py-[1px] rounded bg-emerald-400 text-slate-950 font-mono-cm font-extrabold text-[7px] uppercase shadow z-30">
+                            IN
+                          </span>
+                        )}
+                        <PlayerAvatar
+                          name={m.player.name}
+                          isSelected={isSelectedIn}
+                          selectionType="in"
+                          size="sm"
+                          number={m.player.number}
+                          stat={metric.text}
+                          statTone={metric.tone}
+                        />
+                        <span
+                          className={`mt-2.5 max-w-full truncate text-center font-display font-extrabold text-[10px] uppercase leading-none ${
+                            isSelectedIn ? "text-emerald-300" : "text-white"
+                          }`}
+                        >
+                          {m.player.number ? `${m.player.number} ` : ""}
+                          {m.player.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          ) : (
           <>
             {/* CM SCOREBOARD & MATCH CLOCK */}
             <section className="cm-bevel rounded-xl overflow-hidden">
@@ -2199,7 +2674,7 @@ export function VarmbolMatchApp() {
               )}
             </section>
           </>
-        )}
+          ))}
 
         {/* ============================================================
             FLIK 2: KALLELSE, TRUPP & MATCHINSTÄLLNINGAR
@@ -2789,6 +3264,7 @@ export function VarmbolMatchApp() {
           FLYTANDE MULTI-BYTESBALK LÄNGST NER (1, 2, 3 ELLER 4 BYTEN)
          ============================================================ */}
       {activeTab === "match" &&
+        !focusMode &&
         (selectedOutIds.length > 0 || selectedInIds.length > 0) && (
           <div className="fixed bottom-0 inset-x-0 z-40 p-2.5 bg-gradient-to-t from-[#02060d] via-[#040c1a]/95 to-transparent backdrop-blur-md">
             <div className="max-w-4xl mx-auto cm-bevel rounded-xl p-3 border-2 border-[#facc15]">

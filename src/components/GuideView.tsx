@@ -5,6 +5,10 @@ import { Volume2 } from "lucide-react";
 
 const SECTIONS: { title: string; body: string }[] = [
   {
+    title: "Fokusläge (noll scroll)",
+    body: "Knappen Fokus uppe till höger låser hela skärmen till en enda mobilvy: klocka, resultat, 2D-planen och alla fem på bänken på en rad längst ner. Ingen rullning behövs medan bollen är i spel. Tryck Full för att få tillbaka flikarna Plan, Lag, Tid och Guide.",
+  },
+  {
     title: "Två telefoner (Styr och Följ)",
     body: "En telefon står på Styr uppe till höger. Den trycker avspark, byten och mål och skickar allt till Vercel Blob. Jockes och Sofias telefoner trycker på Följ. Då ser alla samma 7-mot-7-uppställning, samma klocka, samma mål och samma cup-tabell varannan sekund, utan att råka trycka i fickan.",
   },

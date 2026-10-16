@@ -15,6 +15,8 @@ interface PlayerAvatarProps {
   posCode?: string;
   stat?: string;
   statTone?: "good" | "mid" | "low";
+  /** Gul ring när cirkeln är skottet, blå när den kan vara passningen. */
+  highlight?: "shot" | "pass";
 }
 
 export function PlayerAvatar({
@@ -29,6 +31,7 @@ export function PlayerAvatar({
   posCode,
   stat,
   statTone = "good",
+  highlight,
 }: PlayerAvatarProps) {
   const initial = name.trim().slice(0, 2).toUpperCase() || "?";
 
@@ -39,7 +42,11 @@ export function PlayerAvatar({
     lg: "w-11 h-11 text-sm",
   }[size];
 
-  const ringClass = isSelected
+  const ringClass = highlight === "shot"
+    ? "ring-2 ring-[#facc15] border-2 border-slate-950 shadow-[0_0_14px_rgba(250,204,21,0.95)] scale-105"
+    : highlight === "pass"
+    ? "ring-2 ring-sky-200 border-2 border-slate-950 shadow-[0_0_12px_rgba(125,211,252,0.9)] scale-105"
+    : isSelected
     ? selectionType === "out"
       ? "ring-2 ring-orange-300 border-2 border-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.9)] scale-105"
       : "ring-2 ring-emerald-300 border-2 border-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.9)] scale-105"

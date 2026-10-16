@@ -6,6 +6,8 @@ Webbapp för tränarna i **Värmbols FC Pojkar 2017** (Lars, Jocke och Sofia) f�
 
 - **Hela P2017-truppen inlagd** (endast förnamn: Abdullahi, Bilel, Edvin, Gabriel, Holger, Kasper, Lukas, Mahir, Mille, Oliver, Oscar, Scott). På planen visas nummercirklar, tidspill och namn direkt på gräset.
 - **Speltid per plats och cupen totalt** i Speltidsrapport. Sparas i telefonen när en match läggs i cuploggen, och när nästa match startas.
+- **Två telefoner (Styr / Följ):** En telefon står på **Styr** och sköter klockan, bytena och målen. De andra står på **Följ** och ser samma laguppställning, klocka, mål och cup-tabell live via Vercel Blob.
+- **Mål och pass från position.** Plus på Värmbols mål, sedan ett tryck på cirkeln som sköt och ett till för passningen. Motståndarens plus är ett enda tryck. Under Tid: mål från FW, pass från HM.
 - **Korta ljudeffekter** vid avspark, byte, mål, MV-krage och slutsignal. Stängs av med högtalarikonen.
 - **Guide** som förklarar klockan, byten, formationer och statistiken.
 - **Kallelse / Matchval:** Bocka i vilka spelare som är med på dagens match eller cup (t.ex. *Provcup 7v7 Norrköping, IK Sleipner*), och ställ in `2×15 min`, `3×15 min`, `3×20 min` osv.

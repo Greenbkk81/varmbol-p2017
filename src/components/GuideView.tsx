@@ -5,6 +5,10 @@ import { Volume2 } from "lucide-react";
 
 const SECTIONS: { title: string; body: string }[] = [
   {
+    title: "Två telefoner (Styr och Följ)",
+    body: "En telefon står på Styr uppe till höger. Den trycker avspark, byten och mål och skickar allt till Vercel Blob. Jockes och Sofias telefoner trycker på Följ. Då ser alla samma 7-mot-7-uppställning, samma klocka, samma mål och samma cup-tabell varannan sekund, utan att råka trycka i fickan.",
+  },
+  {
     title: "Klockan",
     body: "Avspark startar periodklockan. Pausa när ni vill frysa tiden, till exempel vid en lång avblåsning. Fortsätt tar vid där ni slutade. Klockan följer telefonens riktiga tid, så den tappar inte sekunder om skärmen slocknar. Wake Lock försöker hålla skärmen tänd under pågående period.",
   },
@@ -33,6 +37,10 @@ const SECTIONS: { title: string; body: string }[] = [
     body: "1-4-1 är grunduppställningen i sjumannafotboll: målvakt, libero, fyrbackslinje på mitten och en spets. 2-3-1, 2-2-2 och 3-2-1 flyttar samma sju spelare. I femmanna finns 1-2-1 och 2-2. Tiden sparas på den plats spelaren stod just då, så ett byte av formation delar upp minuterna.",
   },
   {
+    title: "Mål och pass",
+    body: "Plus på Värmbols mål räknar direkt. Tryck sedan på cirkeln som sköt, så sparas positionen han stod på, till exempel FW eller LIB. Ett tryck till markerar var passningen kom ifrån. Ingen pass hoppar över. Utan plats sparar bara målet. Motståndarens plus är fortfarande ett enda tryck. Minus tar bort senaste målet. Under Tid står mål från och pass från.",
+  },
+  {
     title: "Statistik och cupen",
     body: "Speltidsrapport visar den här matchen: total tid, bänk och varje plats (MV, LIB, FW och så vidare). Cupen totalt lägger ihop sparade matcher plus den som pågår, utan att räkna samma match två gånger. Spara i cuplogg när matchen är slut. Startar ni nästa match sparas den förra automatiskt om klockan har gått.",
   },
@@ -42,7 +50,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: "Det som sparas",
-    body: "Allt ligger i den här telefonen. Inga efternamn och inga medlemsnummer. Rensar ni webbläsarens data försvinner matcherna, så spara cupen innan ni byter telefon.",
+    body: "Matchen och cupen sparas både i telefonen och i molnet via Vercel Blob. Inga efternamn och inga medlemsnummer.",
   },
 ];
 

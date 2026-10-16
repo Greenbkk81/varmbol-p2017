@@ -1,6 +1,7 @@
 import { FORMATION_SLOTS } from "./default-roster";
 import {
   ComputedPlayerMetrics,
+  GoalRecord,
   MatchConfig,
   MatchFormat,
   MatchPlayerState,
@@ -9,7 +10,7 @@ import {
   RosterPlayer,
 } from "./types";
 
-function positionCodeFor(
+export function pitchPositionCode(
   state: MatchState,
   player: MatchPlayerState
 ): string | null {
@@ -93,7 +94,7 @@ export function commitRunningTime(
             ...p,
             accumulatedOutfieldMs: p.accumulatedOutfieldMs + delta,
           };
-      return addPositionTime(timed, positionCodeFor(state, p), delta);
+      return addPositionTime(timed, pitchPositionCode(state, p), delta);
     }
     return {
       ...p,
@@ -127,6 +128,7 @@ export function createSnapshot(
     logs: state.logs.map((l) => ({ ...l })),
     ourScore: state.ourScore,
     opponentScore: state.opponentScore,
+    goals: (state.goals ?? []).map((goal) => ({ ...goal })),
   };
 }
 
@@ -155,6 +157,7 @@ export function undoLastAction(state: MatchState, now: number): MatchState {
     logs: latest.logs,
     ourScore: latest.ourScore,
     opponentScore: latest.opponentScore,
+    goals: (latest.goals ?? []).map((goal) => ({ ...goal })),
     undoStack: rest,
   };
 }
@@ -270,6 +273,7 @@ export function createInitialMatchState(
     logs: [],
     ourScore: 0,
     opponentScore: 0,
+    goals: [],
     undoStack: [],
   };
 }
@@ -297,7 +301,7 @@ export function computePlayerMetrics(
     const benchMs = p.accumulatedBenchMs + (!p.onPitch ? runningDelta : 0);
     const positionMs: Record<string, number> = { ...(p.positionMs ?? {}) };
     if (p.onPitch && runningDelta > 0) {
-      const code = positionCodeFor(state, p);
+      const code = pitchPositionCode(state, p);
       if (code) positionMs[code] = (positionMs[code] ?? 0) + runningDelta;
     }
     const currentStintMs = Math.max(
@@ -639,6 +643,110 @@ export function assignGoalkeeperCollar(
     ...committed,
     players: normalizePitchSlots(updatedPlayers, capacity),
     logs: [newLog, ...committed.logs],
+  };
+}
+
+export function addOurGoal(
+  state: MatchState,
+  now: number,
+  goalId: string
+): MatchState {
+  const committed = commitRunningTime(state, now);
+  const withUndo = pushUndoSnapshot(committed, "Mål");
+  const goal: GoalRecord = {
+    id: goalId,
+    side: "ours",
+    period: withUndo.currentPeriod,
+    matchTimeMs: getTotalMatchElapsedMs(withUndo, now),
+  };
+  return {
+    ...withUndo,
+    ourScore: withUndo.ourScore + 1,
+    goals: [...(withUndo.goals ?? []), goal],
+  };
+}
+
+export function addOpponentGoal(state: MatchState, now: number): MatchState {
+  const goal: GoalRecord = {
+    id: `goal-${now}-${Math.random().toString(36).slice(2, 6)}`,
+    side: "theirs",
+    period: state.currentPeriod,
+    matchTimeMs: getTotalMatchElapsedMs(state, now),
+    assistResolved: true,
+  };
+  return {
+    ...state,
+    opponentScore: state.opponentScore + 1,
+    goals: [...(state.goals ?? []), goal],
+  };
+}
+
+export function stampGoalPlayer(
+  state: MatchState,
+  goalId: string,
+  role: "scorer" | "assist",
+  player: { id: string; name: string; position: string | null }
+): MatchState {
+  return {
+    ...state,
+    goals: (state.goals ?? []).map((goal) => {
+      if (goal.id !== goalId) return goal;
+      if (role === "scorer") {
+        return {
+          ...goal,
+          scorerId: player.id,
+          scorerName: player.name,
+          scorerPosition: player.position ?? undefined,
+        };
+      }
+      return {
+        ...goal,
+        assistId: player.id,
+        assistName: player.name,
+        assistPosition: player.position ?? undefined,
+        assistResolved: true,
+      };
+    }),
+  };
+}
+
+export function markGoalAssistDone(
+  state: MatchState,
+  goalId: string | undefined
+): MatchState {
+  if (!goalId) return state;
+  return {
+    ...state,
+    goals: (state.goals ?? []).map((goal) =>
+      goal.id === goalId ? { ...goal, assistResolved: true } : goal
+    ),
+  };
+}
+
+export function removeLastGoal(
+  state: MatchState,
+  side: "ours" | "theirs"
+): MatchState {
+  const goals = state.goals ?? [];
+  let index = -1;
+  for (let i = goals.length - 1; i >= 0; i--) {
+    if (goals[i].side === side) {
+      index = i;
+      break;
+    }
+  }
+  const nextGoals = index === -1 ? goals : goals.filter((_, i) => i !== index);
+  if (side === "ours") {
+    return {
+      ...state,
+      ourScore: Math.max(0, state.ourScore - 1),
+      goals: nextGoals,
+    };
+  }
+  return {
+    ...state,
+    opponentScore: Math.max(0, state.opponentScore - 1),
+    goals: nextGoals,
   };
 }
 

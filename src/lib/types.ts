@@ -53,6 +53,23 @@ export interface SubstitutionLogItem {
   note?: string;
 }
 
+/** Ett mål. Positionerna är platskoderna spelarna redan stod på, till exempel FW eller LIB. */
+export interface GoalRecord {
+  id: string;
+  side: "ours" | "theirs";
+  period: number;
+  /** Total matchtid från avspark, millisekunder. */
+  matchTimeMs: number;
+  scorerId?: string;
+  scorerName?: string;
+  scorerPosition?: string;
+  assistId?: string;
+  assistName?: string;
+  assistPosition?: string;
+  /** Sant när passningen är vald eller medvetet hoppad över. */
+  assistResolved?: boolean;
+}
+
 export interface MatchConfig {
   format: MatchFormat; // 7v7 (6+1) eller 5v5 (4+1)
   formation: TacticalFormation; // t.ex. "1-4-1"
@@ -75,6 +92,7 @@ export interface MatchSnapshot {
   logs: SubstitutionLogItem[];
   ourScore: number;
   opponentScore: number;
+  goals: GoalRecord[];
 }
 
 export interface MatchState {
@@ -91,6 +109,7 @@ export interface MatchState {
   logs: SubstitutionLogItem[];
   ourScore: number;
   opponentScore: number;
+  goals: GoalRecord[];
   undoStack: MatchSnapshot[];
 }
 
@@ -122,6 +141,7 @@ export interface SavedMatchSummary {
   periodMinutes: number;
   ourScore: number;
   opponentScore: number;
+  goals?: GoalRecord[];
   players: {
     id: string;
     name: string;

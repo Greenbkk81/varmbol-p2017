@@ -102,7 +102,7 @@ export function PlayerAvatar({
 
       {stat && (
         <span
-          className={`absolute left-1/2 -translate-x-1/2 -bottom-1.5 z-30 px-1 py-[1px] rounded-full font-mono-cm font-extrabold text-[8px] leading-none border border-slate-950 shadow tabular-nums ${
+          className={`absolute left-1/2 -translate-x-1/2 -bottom-1.5 z-30 px-1.5 py-[1px] rounded-full font-mono-cm font-extrabold text-[9px] leading-none border border-slate-950 shadow tabular-nums ${
             statTone === "low"
               ? "bg-rose-500 text-white"
               : statTone === "mid"

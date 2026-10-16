@@ -1578,196 +1578,270 @@ export function VarmbolMatchApp() {
         {activeTab === "match" &&
           (focusMode ? (
             <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
-              {/* Kompakt topp-rad: Klocka, Mål, Start/Paus, Ångra, Full vy */}
-              <section className="cm-bevel rounded-lg px-2 py-1.5 flex items-center justify-between gap-1.5 shrink-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="px-1.5 py-0.5 rounded bg-[#005cb9] text-[10px] font-mono-cm font-bold uppercase text-white shrink-0">
-                    P{matchState.currentPeriod}/{matchState.config.periods}
-                  </span>
-                  <span
-                    className={`font-mono-cm text-xl font-extrabold tabular-nums leading-none shrink-0 ${
+              {/* Tydlig matchklocka + ställning + verktygsrad i fokusläge */}
+              <section className="cm-bevel rounded-xl p-1.5 flex flex-col gap-1.5 shrink-0">
+                <div className="flex items-stretch justify-between gap-1.5">
+                  {/* Stor tydlig matchklocka + Start/Paus i egen belyst ram */}
+                  <div
+                    className={`flex-1 flex items-center justify-between gap-2 rounded-lg bg-[#02060d] px-2.5 py-1 border-2 transition-all shrink-0 ${
                       isPeriodOvertime
-                        ? "text-[#facc15] animate-pulse"
+                        ? "border-[#facc15] shadow-[0_0_16px_rgba(250,204,21,0.35)]"
                         : matchState.status === "running"
-                        ? "text-emerald-400"
-                        : "text-white"
+                        ? "border-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.3)]"
+                        : "border-[#facc15]/85 shadow-[0_0_12px_rgba(250,204,21,0.18)]"
                     }`}
                   >
-                    {formatDurationMmSs(periodElapsedMs)}
-                  </span>
-                </div>
-
-                {/* Kompakt ställning VFC : Motståndare */}
-                <div className="flex items-center gap-1 bg-[#040a14] border border-sky-400/25 rounded px-1.5 py-0.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleRemoveOurGoal}
-                    aria-label="Ta bort senaste Värmbolsmål"
-                    className="w-5 h-5 rounded bg-slate-800 text-slate-300 text-xs font-bold"
-                  >
-                    -
-                  </button>
-                  <span className="font-mono-cm text-base font-extrabold text-sky-300 px-0.5">
-                    {matchState.ourScore}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleAddOurGoal}
-                    aria-label="Värmbols mål"
-                    className="w-5 h-5 rounded bg-[#005cb9] text-white text-xs font-bold"
-                  >
-                    +
-                  </button>
-                  <span className="font-mono-cm text-slate-500 font-bold text-xs px-0.5">
-                    :
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleRemoveOpponentGoal}
-                    aria-label="Ta bort senaste insläppta mål"
-                    className="w-5 h-5 rounded bg-slate-800 text-slate-300 text-xs font-bold"
-                  >
-                    -
-                  </button>
-                  <span className="font-mono-cm text-base font-extrabold text-amber-300 px-0.5">
-                    {matchState.opponentScore}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleAddOpponentGoal}
-                    aria-label="Insläppt mål"
-                    className="w-5 h-5 rounded bg-slate-700 text-white text-xs font-bold"
-                  >
-                    +
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleToggleClock}
-                    className={`py-1 px-2 rounded font-display font-extrabold text-xs uppercase tracking-wide flex items-center gap-1 border active:scale-95 ${
-                      matchState.status === "running"
-                        ? "bg-[#facc15] text-slate-950 border-yellow-200"
-                        : "bg-emerald-500 text-slate-950 border-emerald-300"
-                    }`}
-                  >
-                    {matchState.status === "running" ? (
-                      <>
-                        <Pause className="w-3.5 h-3.5 fill-slate-950" />
-                        <span>Paus</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3.5 h-3.5 fill-slate-950" />
-                        <span>
-                          {periodElapsedMs === 0
-                            ? `P${matchState.currentPeriod}`
-                            : "Kör"}
-                        </span>
-                      </>
-                    )}
-                  </button>
-
-                  {matchState.undoStack.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleUndo}
-                      className="p-1.5 rounded bg-slate-900 text-[#facc15] border border-[#facc15]/40 active:scale-95"
-                      title={`Ångra: ${matchState.undoStack[0].label}`}
+                    <div
+                      onClick={handleToggleClock}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleToggleClock();
+                        }
+                      }}
+                      title="Tryck för att starta eller pausa matchklockan"
+                      className="flex flex-col justify-center cursor-pointer select-none shrink-0"
                     >
-                      <Undo2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                      <div className="flex items-center gap-1 leading-none mb-0.5 whitespace-nowrap">
+                        <span className="px-1.5 py-[1px] rounded bg-[#005cb9] text-[10px] font-mono-cm font-extrabold uppercase text-white">
+                          P{matchState.currentPeriod}/{matchState.config.periods}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono-cm font-extrabold uppercase tracking-tight ${
+                            isPeriodOvertime
+                              ? "text-[#facc15] animate-pulse"
+                              : "text-sky-200"
+                          }`}
+                        >
+                          {isPeriodOvertime
+                            ? "FULL TID!"
+                            : `KVAR ${formatDurationMmSs(periodRemainingMs)}`}
+                        </span>
+                      </div>
 
-                  <button
-                    type="button"
-                    onClick={handleToggleFocusMode}
-                    className="px-1.5 py-1 rounded bg-[#facc15] text-slate-950 border border-yellow-200 font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-1 active:scale-95"
-                    title="Gå tillbaka till full vy"
-                  >
-                    <Minimize2 className="w-3 h-3" />
-                    <span>Full</span>
-                  </button>
-                </div>
-              </section>
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                            isPeriodOvertime
+                              ? "bg-[#facc15] animate-ping"
+                              : matchState.status === "running"
+                              ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]"
+                              : "bg-[#facc15]"
+                          }`}
+                        />
+                        <span
+                          className={`font-mono-cm text-[32px] sm:text-4xl font-extrabold tracking-tight tabular-nums leading-none ${
+                            isPeriodOvertime
+                              ? "text-[#facc15] animate-pulse"
+                              : matchState.status === "running"
+                              ? "text-emerald-400"
+                              : "text-[#facc15]"
+                          }`}
+                        >
+                          {formatDurationMmSs(periodElapsedMs)}
+                        </span>
+                      </div>
+                    </div>
 
-              {/* Tunn verktygsrad på en rad: Förslag 1x–4x, MV-krage, Formation, Styr/Följ */}
-              <section className="cm-bevel rounded-lg px-2 py-1 flex items-center justify-between gap-1 shrink-0">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-display font-extrabold uppercase text-[#facc15]">
-                    Byt:
-                  </span>
-                  {[1, 2, 3, 4].map((count) => {
-                    const disabled = count > maxMultiSubCount;
-                    const active =
-                      suggestionBanner !== null && suggestionCount === count;
-                    return (
+                    {/* Start/Paus + ev. Nästa Period */}
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
-                        key={count}
                         type="button"
-                        disabled={disabled}
-                        onClick={() => handleSuggestSubs(count)}
-                        className={`px-2 py-0.5 rounded font-mono-cm font-extrabold text-[11px] border ${
-                          disabled
-                            ? "bg-slate-900/40 text-slate-600 border-white/5"
-                            : active
+                        onClick={handleToggleClock}
+                        className={`py-2 px-2.5 rounded-lg font-display font-extrabold text-xs uppercase tracking-wider flex items-center gap-1 border shadow active:scale-95 whitespace-nowrap ${
+                          matchState.status === "running"
                             ? "bg-[#facc15] text-slate-950 border-yellow-200"
-                            : "bg-[#0f2547] text-white border-sky-400/30"
+                            : "bg-emerald-500 text-slate-950 border-emerald-300"
                         }`}
                       >
-                        {count}x
+                        {matchState.status === "running" ? (
+                          <>
+                            <Pause className="w-3.5 h-3.5 fill-slate-950" />
+                            <span>Paus</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3.5 h-3.5 fill-slate-950" />
+                            <span>
+                              {periodElapsedMs === 0
+                                ? `Start P${matchState.currentPeriod}`
+                                : "Kör"}
+                            </span>
+                          </>
+                        )}
                       </button>
-                    );
-                  })}
 
-                  <button
-                    type="button"
-                    onClick={() => setGkModalOpen(true)}
-                    className="px-1.5 py-0.5 rounded font-display font-bold uppercase text-[11px] bg-amber-400/15 text-[#facc15] border border-[#facc15]/40 flex items-center gap-1"
-                  >
-                    <Shield className="w-3 h-3 fill-[#facc15]" />
-                    <span>MV</span>
-                  </button>
+                      {periodElapsedMs > 0 &&
+                        matchState.status !== "running" && (
+                          <button
+                            type="button"
+                            onClick={handleEndPeriod}
+                            className="py-2 px-1.5 rounded-lg font-mono-cm font-extrabold text-[10px] uppercase bg-[#102649] text-sky-200 border border-sky-400/30 active:scale-95 whitespace-nowrap"
+                            title="Nästa period eller avsluta match"
+                          >
+                            {matchState.currentPeriod >=
+                            matchState.config.periods
+                              ? "Slut"
+                              : `P${matchState.currentPeriod + 1}→`}
+                          </button>
+                        )}
+                    </div>
+                  </div>
+
+                  {/* Ställning VFC : Motståndare */}
+                  <div className="flex flex-col justify-center bg-[#040a14] border border-sky-400/30 rounded-lg px-2 py-1 shrink-0">
+                    <div className="flex items-center justify-between text-[9px] font-display font-extrabold uppercase tracking-wider leading-none mb-1">
+                      <span className="text-sky-300">VFC</span>
+                      <span className="text-amber-300 truncate max-w-[52px]">
+                        {matchState.config.opponent || "MOT"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleRemoveOurGoal}
+                        aria-label="Ta bort senaste Värmbolsmål"
+                        className="w-5 h-5 rounded bg-slate-800 text-slate-300 text-xs font-bold"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono-cm text-lg font-extrabold text-white min-w-[1rem] text-center leading-none">
+                        {matchState.ourScore}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleAddOurGoal}
+                        aria-label="Värmbols mål"
+                        className="w-5 h-5 rounded bg-[#005cb9] text-white text-xs font-bold"
+                      >
+                        +
+                      </button>
+                      <span className="font-mono-cm text-slate-500 font-bold text-xs">
+                        :
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleRemoveOpponentGoal}
+                        aria-label="Ta bort senaste insläppta mål"
+                        className="w-5 h-5 rounded bg-slate-800 text-slate-300 text-xs font-bold"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono-cm text-lg font-extrabold text-white min-w-[1rem] text-center leading-none">
+                        {matchState.opponentScore}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleAddOpponentGoal}
+                        aria-label="Insläppt mål"
+                        className="w-5 h-5 rounded bg-slate-700 text-white text-xs font-bold"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1">
-                  {matchState.config.format === "7v7" && (
-                    <select
-                      aria-label="Formation"
-                      value={currentFormation}
-                      onChange={(e) =>
-                        handleChangeFormation(
-                          e.target.value as TacticalFormation
+                {/* Verktygsrad på en rad: Förslag 1x–4x, MV-krage, Formation, Styr/Följ, Ångra, Full */}
+                <div className="flex items-center justify-between gap-1 pt-1 border-t border-sky-400/15">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-display font-extrabold uppercase text-[#facc15]">
+                      Byt:
+                    </span>
+                    {[1, 2, 3, 4].map((count) => {
+                      const disabled = count > maxMultiSubCount;
+                      const active =
+                        suggestionBanner !== null && suggestionCount === count;
+                      return (
+                        <button
+                          key={count}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => handleSuggestSubs(count)}
+                          className={`px-1.5 py-0.5 rounded font-mono-cm font-extrabold text-[11px] border ${
+                            disabled
+                              ? "bg-slate-900/40 text-slate-600 border-white/5"
+                              : active
+                              ? "bg-[#facc15] text-slate-950 border-yellow-200"
+                              : "bg-[#0f2547] text-white border-sky-400/30"
+                          }`}
+                        >
+                          {count}x
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={() => setGkModalOpen(true)}
+                      className="px-1.5 py-0.5 rounded font-display font-bold uppercase text-[11px] bg-amber-400/15 text-[#facc15] border border-[#facc15]/40 flex items-center gap-0.5"
+                    >
+                      <Shield className="w-3 h-3 fill-[#facc15]" />
+                      <span>MV</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {matchState.config.format === "7v7" && (
+                      <select
+                        aria-label="Formation"
+                        value={currentFormation}
+                        onChange={(e) =>
+                          handleChangeFormation(
+                            e.target.value as TacticalFormation
+                          )
+                        }
+                        className="bg-[#040a14] border border-sky-400/30 rounded px-1 py-0.5 font-mono-cm font-bold text-[11px] text-white"
+                      >
+                        {(["1-4-1", "2-3-1", "2-2-2", "3-2-1"] as const).map(
+                          (fmt) => (
+                            <option key={fmt} value={fmt}>
+                              {fmt}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSetSyncMode(
+                          syncMode === "control" ? "follow" : "control"
                         )
                       }
-                      className="bg-[#040a14] border border-sky-400/30 rounded px-1.5 py-0.5 font-mono-cm font-bold text-[11px] text-white"
+                      className={`px-1.5 py-0.5 rounded font-mono-cm font-extrabold text-[10px] uppercase border ${
+                        syncMode === "follow"
+                          ? "bg-emerald-400 text-slate-950 border-emerald-200"
+                          : "bg-[#040a14] text-sky-200 border-sky-400/30"
+                      }`}
                     >
-                      {(["1-4-1", "2-3-1", "2-2-2", "3-2-1"] as const).map(
-                        (fmt) => (
-                          <option key={fmt} value={fmt}>
-                            {fmt}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  )}
+                      {syncMode === "follow" ? "Följer" : "Styr"}
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSetSyncMode(
-                        syncMode === "control" ? "follow" : "control"
-                      )
-                    }
-                    className={`px-1.5 py-0.5 rounded font-mono-cm font-extrabold text-[10px] uppercase border ${
-                      syncMode === "follow"
-                        ? "bg-emerald-400 text-slate-950 border-emerald-200"
-                        : "bg-[#040a14] text-sky-200 border-sky-400/30"
-                    }`}
-                  >
-                    {syncMode === "follow" ? "Följer" : "Styr"}
-                  </button>
+                    {matchState.undoStack.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleUndo}
+                        className="p-1 rounded bg-slate-900 text-[#facc15] border border-[#facc15]/40 active:scale-95"
+                        title={`Ångra: ${matchState.undoStack[0].label}`}
+                      >
+                        <Undo2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleToggleFocusMode}
+                      className="px-1.5 py-0.5 rounded bg-[#facc15] text-slate-950 border border-yellow-200 font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-0.5 active:scale-95"
+                      title="Gå tillbaka till full vy"
+                    >
+                      <Minimize2 className="w-3 h-3" />
+                      <span>Full</span>
+                    </button>
+                  </div>
                 </div>
               </section>
 
@@ -1783,15 +1857,15 @@ export function VarmbolMatchApp() {
                     onSkip={handleSkipGoalPick}
                   />
                 ) : (
-                  <div className="bg-[#facc15] text-slate-950 px-2.5 py-1 flex items-center justify-between gap-2 shrink-0">
+                  <div className="bg-[#061224] text-sky-100 border-b border-sky-400/25 px-2.5 py-1 flex items-center justify-between gap-2 shrink-0">
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <span className="px-1 py-0.2 bg-slate-950 text-[#facc15] font-mono-cm font-extrabold text-[9px] rounded shrink-0">
+                      <span className="px-1 py-0.2 bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[9px] rounded shrink-0">
                         LIVE
                       </span>
                       <CoachTicker text={cmCommentaryText} />
                     </div>
                     {goalHeadline(matchState.goals) && (
-                      <span className="font-mono-cm font-extrabold text-[10px] shrink-0">
+                      <span className="font-mono-cm font-extrabold text-[10px] text-[#facc15] shrink-0">
                         {goalHeadline(matchState.goals)}
                       </span>
                     )}

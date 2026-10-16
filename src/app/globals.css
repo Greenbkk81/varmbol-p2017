@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  --cm-bg-deep: #050c18;
+  --cm-panel: #0b182e;
+  --cm-panel-header: #00478f;
+  --cm-varmbol-blue: #005cb9;
+  --cm-gold: #facc15;
+  --cm-cyan: #38bdf8;
+  --cm-pitch-dark: #14532d;
+  --cm-pitch-light: #166534;
+}
+
+body {
+  background-color: var(--cm-bg-deep);
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(0, 92, 185, 0.28) 0%, transparent 55%),
+    linear-gradient(180deg, #061020 0%, #040912 100%);
+  color: #f1f5f9;
+  font-family: var(--font-chakra), sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-barlow), sans-serif;
+}
+
+.font-mono-cm {
+  font-family: var(--font-jetbrains), monospace;
+}
+
+/* Gul CM-rad: en kopia rullar ut till vänster medan nästa kommer in från höger */
+.cm-ticker {
+  overflow: hidden;
+}
+
+.cm-ticker-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+}
+
+.cm-ticker-track span {
+  white-space: nowrap;
+  padding-right: 3.25rem;
+}
+
+/* Klassisk CM/FM-panel med fasad kant */
+.cm-bevel {
+  background: linear-gradient(180deg, #0d1f3a 0%, #081326 100%);
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    0 10px 28px -8px rgba(0, 0, 0, 0.75);
+}
+
+.cm-header-bar {
+  background: linear-gradient(90deg, #003b7a 0%, #005cb9 50%, #00356e 100%);
+  border-bottom: 2px solid #facc15;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Fotbollsplan med klippta gräsränder */
+.cm-pitch-surface {
+  background-color: #155e32;
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.045) 0px,
+    rgba(255, 255, 255, 0.045) 36px,
+    rgba(0, 0, 0, 0.06) 36px,
+    rgba(0, 0, 0, 0.06) 72px
+  );
+  box-shadow:
+    inset 0 0 50px rgba(0, 0, 0, 0.55),
+    0 12px 35px rgba(0, 0, 0, 0.65);
+}

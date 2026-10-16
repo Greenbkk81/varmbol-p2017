@@ -1,0 +1,16 @@
+{
+  "name": "Värmbols FC P2017 Speltid",
+  "short_name": "VFC P2017",
+  "description": "Speltidskoll och byten för Värmbols FC P2017",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#040d1a",
+  "theme_color": "#005cb9",
+  "icons": [
+    {
+      "src": "/club/varmbol-logo.png",
+      "sizes": "200x200",
+      "type": "image/png"
+    }
+  ]
+}

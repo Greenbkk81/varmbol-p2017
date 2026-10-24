@@ -26,12 +26,12 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  DEFAULT_ROSTER,
   FORMATION_SLOTS,
   PRESET_EVENTS,
   PresetEvent,
   QUICK_OPPONENTS,
 } from "@/lib/default-roster";
+import { buildCupSetup, CUP_COACH_NOTES, CUP_MATCHES, INITIAL_CUP_SETUP } from "@/lib/cup-plan";
 import {
   addOpponentGoal,
   addOurGoal,
@@ -359,44 +359,24 @@ export function VarmbolMatchApp() {
     "play"
   );
 
-  // Trupp (12 spelare som standard)
-  const [roster, setRoster] = useState<RosterPlayer[]>(DEFAULT_ROSTER);
+  // Cuptruppen enligt tränarnas matchplan.
+  const [roster, setRoster] = useState<RosterPlayer[]>(INITIAL_CUP_SETUP.roster);
 
   // Matchinställningar inför ny match (med 1-4-1 som förval!)
-  const [draftConfig, setDraftConfig] = useState<MatchConfig>({
-    format: "7v7",
-    formation: "1-4-1",
-    periods: 2,
-    periodMinutes: 15,
-    opponent: "IK Sleipner",
-    location: "Cup",
-    eventTitle: "Provcup 7v7 Norrköping (IK Sleipner)",
-    countGoalkeeperInFairness: false,
-    stintMinutes: 5,
-  });
+  const [draftConfig, setDraftConfig] = useState<MatchConfig>(INITIAL_CUP_SETUP.config);
 
   const [setupPitchIds, setSetupPitchIds] = useState<string[]>(() =>
-    DEFAULT_ROSTER.slice(0, 7).map((p) => p.id)
+    [...INITIAL_CUP_SETUP.pitchIds]
   );
-  const [setupGkId, setSetupGkId] = useState<string>(DEFAULT_ROSTER[0].id);
+  const [setupGkId, setSetupGkId] = useState<string>(INITIAL_CUP_SETUP.goalkeeperId);
 
   // Aktiv match
   const [matchState, setMatchState] = useState<MatchState>(() =>
     createInitialMatchState(
-      DEFAULT_ROSTER,
-      {
-        format: "7v7",
-        formation: "1-4-1",
-        periods: 2,
-        periodMinutes: 15,
-        opponent: "IK Sleipner",
-        location: "Cup",
-        eventTitle: "Provcup 7v7 Norrköping (IK Sleipner)",
-        countGoalkeeperInFairness: false,
-        stintMinutes: 5,
-      },
-      DEFAULT_ROSTER.slice(0, 7).map((p) => p.id),
-      DEFAULT_ROSTER[0].id
+      INITIAL_CUP_SETUP.roster,
+      INITIAL_CUP_SETUP.config,
+      INITIAL_CUP_SETUP.pitchIds,
+      INITIAL_CUP_SETUP.goalkeeperId
     )
   );
 
@@ -473,6 +453,8 @@ export function VarmbolMatchApp() {
           const normalized = normalizeMatchState(parsedMatch);
           setMatchState(normalized);
           setDraftConfig(normalized.config);
+          setSetupPitchIds(normalized.players.filter((p) => p.onPitch).sort((a, b) => (a.pitchSlotIndex ?? 0) - (b.pitchSlotIndex ?? 0)).map((p) => p.id));
+          setSetupGkId(normalized.players.find((p) => p.isGoalkeeper)?.id ?? INITIAL_CUP_SETUP.goalkeeperId);
         }
       }
 
@@ -1172,6 +1154,15 @@ export function VarmbolMatchApp() {
 
   function handleApplyPresetEvent(preset: PresetEvent) {
     if (isFollowing) return;
+    const cupMatch = CUP_MATCHES.find((match) => match.id === preset.id);
+    if (cupMatch) {
+      const setup = buildCupSetup(cupMatch, roster);
+      setRoster(setup.roster);
+      setDraftConfig({ ...setup.config, stintMinutes: draftConfig.stintMinutes });
+      setSetupPitchIds(setup.pitchIds);
+      setSetupGkId(setup.goalkeeperId);
+      return;
+    }
     const nextConfig: MatchConfig = {
       ...draftConfig,
       format: preset.format,
@@ -2766,11 +2757,33 @@ export function VarmbolMatchApp() {
                     VÄRMBOLS FC POJKAR 2017 · MATCHUPPSTÄLLNING
                   </h2>
                   <p className="text-xs text-sky-100/90 mt-0.5">
-                    Bocka i vilka av de 12 killarna som är med idag och välj start-sjua i {draftConfig.formation}.
+                    Bocka i vilka spelare som är med idag och välj startuppställning i {draftConfig.formation}.
                   </p>
                 </div>
               </div>
             </div>
+
+            <section className="cm-bevel rounded-xl p-4 space-y-3">
+              <h3 className="font-display font-extrabold text-sm uppercase tracking-wider text-[#facc15]">
+                Cupplan · Söndag 25 oktober
+              </h3>
+              <p className="text-xs text-slate-300">10 spelare · 1–4–1 · Målvakten står hela matchen och ingår inte i bytesförslagen.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {CUP_MATCHES.map((match) => (
+                  <button key={match.id} type="button" disabled={isFollowing}
+                    onClick={() => handleApplyPresetEvent(match)}
+                    aria-pressed={draftConfig.eventTitle === `Provcup 25 okt · ${match.title}`}
+                    className={`text-left p-3 rounded-lg border disabled:opacity-50 ${draftConfig.eventTitle === `Provcup 25 okt · ${match.title}` ? "bg-[#005cb9]/40 border-[#facc15]" : "bg-[#061224] border-white/10"}`}>
+                    <span className="block font-display font-extrabold text-sm text-white">{match.title}</span>
+                    <span className="block mt-1 text-xs text-slate-300">{match.subtitle}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-300">Välj match, kontrollera startuppställningen och tryck Starta match längst ner. Första matchen följer skissen. I övriga matcher tar Oscar den nya målvaktens utespelarplats som förval; ändra vid behov.</p>
+              <div className="border-t border-white/10 pt-3 space-y-2">
+                {CUP_COACH_NOTES.map((note) => <p key={note.role} className="text-sm text-slate-200"><strong className="text-[#facc15]">{note.role}:</strong> {note.text}</p>)}
+              </div>
+            </section>
 
             {/* 1. Välj Match / Cup & Motståndare */}
             <section className="cm-bevel rounded-xl p-4 space-y-3">
@@ -2969,7 +2982,7 @@ export function VarmbolMatchApp() {
                   }
                   className="px-2.5 py-1 rounded bg-[#061224] border border-sky-400/30 text-xs font-mono-cm text-sky-200"
                 >
-                  Välj alla 12
+                  Välj alla {roster.length}
                 </button>
               </div>
 
@@ -3008,7 +3021,7 @@ export function VarmbolMatchApp() {
                               : isGk
                               ? "STARTAR I MÅL (MV)"
                               : isStarter
-                              ? "STARTELVAN (PLAN)"
+                              ? `STARTAR · ${FORMATION_SLOTS[draftConfig.formation].find((slot) => slot.slotIndex === setupPitchIds.filter((id) => id !== setupGkId).indexOf(player.id) + 1)?.label ?? "PLAN"}`
                               : "AVBYTARE (BÄNK)"}
                           </div>
                         </div>
@@ -3508,3 +3521,4 @@ export function VarmbolMatchApp() {
     </div>
   );
 }
+

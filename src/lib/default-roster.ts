@@ -79,6 +79,8 @@ export const DEFAULT_ROSTER: RosterPlayer[] = [
     number: "12",
     activeInSquad: true,
   },
+  { id: "p-charlie", name: "Charlie", activeInSquad: true },
+  { id: "p-ebbe", name: "Ebbe", activeInSquad: true },
 ];
 
 export const POSITION_LABELS: Record<string, string> = {
@@ -228,3 +230,4 @@ export const PRESET_EVENTS: PresetEvent[] = [
     periodMinutes: 15,
   },
 ];
+

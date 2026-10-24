@@ -234,14 +234,17 @@ export function createInitialMatchState(
     gkId = firstOnPitch?.id;
   }
 
-  let nextOutfieldSlot = 1;
+  // Startlistans ordning är positionsordningen, oavsett truppens sortering.
+  const outfieldIds = [...pitchSet].filter(
+    (id) => id !== gkId && activeRoster.some((player) => player.id === id)
+  );
   const rawPlayers: MatchPlayerState[] = activeRoster.map((r) => {
     const onPitch = pitchSet.has(r.id);
     const isGoalkeeper = onPitch && r.id === gkId;
     const pitchSlotIndex = onPitch
       ? isGoalkeeper
         ? 0
-        : nextOutfieldSlot++
+        : outfieldIds.indexOf(r.id) + 1
       : undefined;
 
     return {
@@ -756,3 +759,4 @@ export function formatDurationMmSs(ms: number): string {
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
+

@@ -92,3 +92,30 @@ test('undoing a substitution while clock is running preserves elapsed match and 
   const oliver = metrics.find(m => m.player.id === 'p-oliver');
   assert.equal(oliver.outfieldMs, 5 * 60_000);
 });
+
+test('pre-kickoff swap at 0:00 edits starting lineup cleanly without logging a substitution', () => {
+  let match = create(INITIAL_CUP_SETUP);
+  match = executeMultiSubstitution(match, ['p-oliver'], ['p-charlie'], 1000);
+  const oliver = match.players.find(p => p.id === 'p-oliver');
+  const charlie = match.players.find(p => p.id === 'p-charlie');
+  assert.equal(oliver.onPitch, false);
+  assert.equal(oliver.stintsCount, 0);
+  assert.equal(charlie.onPitch, true);
+  assert.equal(charlie.pitchSlotIndex, 1);
+  assert.equal(charlie.stintsCount, 1);
+  assert.equal(match.logs.length, 0);
+});
+
+test('resting bench players are skipped by suggestSubstitutions', () => {
+  let match = create(INITIAL_CUP_SETUP);
+  match = {
+    ...match,
+    status: 'running',
+    lastTickTimestamp: 1000,
+    players: match.players.map(p => p.id === 'p-charlie' ? { ...p, resting: true } : p),
+  };
+  const suggestion = suggestSubstitutions(match, 1000 + 5 * 60_000, 3);
+  assert.equal(suggestion.inIds.includes('p-charlie'), false);
+  assert.equal(suggestion.inIds.length, 2);
+});
+

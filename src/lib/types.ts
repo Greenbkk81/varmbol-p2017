@@ -40,6 +40,8 @@ export interface MatchPlayerState {
   gkPeriods: number[];
   // Tid per platskod i den formation som gällde just då, t.ex. { FW: 180000, LIB: 90000 }
   positionMs?: Record<string, number>;
+  // Om spelaren tillfälligt vilar/skadad på bänken och ska hoppas över i bytesförslag (1x-4x)
+  resting?: boolean;
 }
 
 export interface SubstitutionLogItem {

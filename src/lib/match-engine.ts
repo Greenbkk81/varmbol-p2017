@@ -401,7 +401,7 @@ export function suggestSubstitutions(
     });
 
   const onBench = metrics
-    .filter((m) => !m.player.onPitch)
+    .filter((m) => !m.player.onPitch && !m.player.resting)
     .sort((a, b) => {
       const scoreA = a.fairnessMs * 0.75 - a.currentStintMs * 0.25;
       const scoreB = b.fairnessMs * 0.75 - b.currentStintMs * 0.25;
@@ -410,7 +410,7 @@ export function suggestSubstitutions(
 
   const maxPossible = Math.min(outfieldOnPitch.length, onBench.length);
   if (maxPossible === 0) {
-    return { outIds: [], inIds: [], reason: "Inga avbytare på bänken" };
+    return { outIds: [], inIds: [], reason: "Inga tillgängliga avbytare på bänken" };
   }
 
   const count = Math.min(
@@ -453,6 +453,10 @@ export function executeMultiSubstitution(
   );
   const committed = commitRunningTime(withSnap, now);
   const totalMatchMs = getTotalMatchElapsedMs(committed, now);
+  const isPreKickoff =
+    totalMatchMs === 0 &&
+    committed.currentPeriod === 1 &&
+    committed.status === "paused";
   const capacity = getPitchCapacity(committed.config.format);
 
   // Para ihop varje inbytt spelare med den utbytta spelarens pitchSlotIndex
@@ -486,6 +490,8 @@ export function executeMultiSubstitution(
         isGoalkeeper: false,
         pitchSlotIndex: undefined,
         currentStintStartMatchMs: totalMatchMs,
+        stintsCount: isPreKickoff ? 0 : p.stintsCount,
+        gkPeriods: isPreKickoff ? [] : p.gkPeriods,
       };
     }
     if (inSet.has(p.id)) {
@@ -498,15 +504,23 @@ export function executeMultiSubstitution(
       return {
         ...p,
         onPitch: true,
+        resting: false,
         isGoalkeeper: becomesGk,
         pitchSlotIndex: transfer?.slot ?? 1,
         currentStintStartMatchMs: totalMatchMs,
-        stintsCount: p.stintsCount + 1,
+        stintsCount: isPreKickoff ? 1 : p.stintsCount + 1,
         gkPeriods,
       };
     }
     return p;
   });
+
+  if (isPreKickoff) {
+    return {
+      ...committed,
+      players: normalizePitchSlots(updatedPlayers, capacity),
+    };
+  }
 
   const newLog = {
     id: `log-${now}-${Math.random().toString(36).slice(2, 6)}`,

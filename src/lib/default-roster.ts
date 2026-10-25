@@ -193,7 +193,7 @@ export const PRESET_EVENTS: PresetEvent[] = [
     location: "Cup",
     format: "7v7",
     formation: "1-4-1",
-    periods: 2,
+    periods: 1,
     periodMinutes: 25,
   },
   {
@@ -208,14 +208,14 @@ export const PRESET_EVENTS: PresetEvent[] = [
     periodMinutes: 15,
   },
   {
-    id: "cupmatch-2x25",
-    title: "Sjumanna 2×25 min (1-4-1)",
-    subtitle: "Två halvlekar à 25 min",
+    id: "cupmatch-1x25",
+    title: "Sjumanna 1×25 min (1-4-1)",
+    subtitle: "En match à 25 min utan halvlek",
     opponent: "Katrineholms SK",
     location: "Hemma",
     format: "7v7",
     formation: "1-4-1",
-    periods: 2,
+    periods: 1,
     periodMinutes: 25,
   },
   {

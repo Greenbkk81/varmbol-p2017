@@ -14,10 +14,10 @@ export const CUP_SQUAD_IDS = [
 const FIRST_LINEUP = CUP_SQUAD_IDS.slice(0, 7);
 
 export const CUP_MATCHES: CupMatch[] = [
-  { id: "cup-2026-10-25-0930", kickoff: "09.30", opponent: "Söderköping", location: "Borta", goalkeeperId: "p-oscar", title: "09.30 · Söderköping", subtitle: "Borta · Målvakt Oscar · 2 × 25 min", format: "7v7", formation: "1-4-1", periods: 2, periodMinutes: 25 },
-  { id: "cup-2026-10-25-1030", kickoff: "10.30", opponent: "Västerhaninge", location: "Hemma", goalkeeperId: "p-scott", title: "10.30 · Västerhaninge", subtitle: "Hemma · Målvakt Scott · 2 × 25 min", format: "7v7", formation: "1-4-1", periods: 2, periodMinutes: 25 },
-  { id: "cup-2026-10-25-1200", kickoff: "12.00", opponent: "Ekängen", location: "Borta", goalkeeperId: "p-holger", title: "12.00 · Ekängen", subtitle: "Borta · Målvakt Holger · 2 × 25 min", format: "7v7", formation: "1-4-1", periods: 2, periodMinutes: 25 },
-  { id: "cup-2026-10-25-1400", kickoff: "14.00", opponent: "Svärtinge", location: "Hemma", goalkeeperId: "p-edvin", title: "14.00 · Svärtinge", subtitle: "Hemma · Målvakt Edvin · 2 × 25 min", format: "7v7", formation: "1-4-1", periods: 2, periodMinutes: 25 },
+  { id: "cup-2026-10-25-0930", kickoff: "09.30", opponent: "Söderköping", location: "Borta", goalkeeperId: "p-oscar", title: "09.30 · Söderköping", subtitle: "Borta · Målvakt Oscar · 1 × 25 min", format: "7v7", formation: "1-4-1", periods: 1, periodMinutes: 25 },
+  { id: "cup-2026-10-25-1030", kickoff: "10.30", opponent: "Västerhaninge", location: "Hemma", goalkeeperId: "p-scott", title: "10.30 · Västerhaninge", subtitle: "Hemma · Målvakt Scott · 1 × 25 min", format: "7v7", formation: "1-4-1", periods: 1, periodMinutes: 25 },
+  { id: "cup-2026-10-25-1200", kickoff: "12.00", opponent: "Ekängen", location: "Borta", goalkeeperId: "p-holger", title: "12.00 · Ekängen", subtitle: "Borta · Målvakt Holger · 1 × 25 min", format: "7v7", formation: "1-4-1", periods: 1, periodMinutes: 25 },
+  { id: "cup-2026-10-25-1400", kickoff: "14.00", opponent: "Svärtinge", location: "Hemma", goalkeeperId: "p-edvin", title: "14.00 · Svärtinge", subtitle: "Hemma · Målvakt Edvin · 1 × 25 min", format: "7v7", formation: "1-4-1", periods: 1, periodMinutes: 25 },
 ];
 
 export const CUP_COACH_NOTES = [
@@ -70,29 +70,37 @@ export function buildCupSetup(match: CupMatch, existingRoster: RosterPlayer[]) {
 
 export const INITIAL_CUP_SETUP = buildCupSetup(CUP_MATCHES[0], DEFAULT_ROSTER);
 
-// Uppdatera dagens sparade cupmatcher utan att nollställa klocka eller statistik.
+// Uppdatera dagens sparade cupmatcher utan att nollställa spelad tid.
 export function upgradeCupDuration(state: MatchState): MatchState {
   if (state.status === "finished" || state.config.periods !== 2 ||
-      state.config.periodMinutes !== 15 ||
+      ![15, 25].includes(state.config.periodMinutes) ||
       !state.config.eventTitle?.startsWith("Provcup 25 okt · ")) return state;
-  const extraPeriodMs = 10 * 60_000;
+  const oldPeriodMs = state.config.periodMinutes * 60_000;
   const upgradeSnapshot = <T extends MatchSnapshot>(snapshot: T): T => ({
     ...snapshot,
+    status: snapshot.status === "period_break" ? "paused" : snapshot.status,
+    currentPeriod: 1,
+    periodElapsedMs: snapshot.periodElapsedMs + (snapshot.currentPeriod - 1) * oldPeriodMs,
     players: snapshot.players.map((player) => ({
       ...player,
-      currentStintStartMatchMs: player.currentStintStartMatchMs +
-        (snapshot.currentPeriod - 1) * extraPeriodMs,
+      gkPeriods: player.gkPeriods.length ? [1] : [],
     })),
-    goals: (snapshot.goals ?? []).map((goal) => ({
-      ...goal,
-      matchTimeMs: goal.matchTimeMs + (goal.period - 1) * extraPeriodMs,
+    logs: snapshot.logs.map((log) => ({
+      ...log,
+      period: 1,
+      matchTimeMs: log.matchTimeMs + (log.period - 1) * oldPeriodMs,
     })),
+    goals: (snapshot.goals ?? []).map((goal) => ({ ...goal, period: 1 })),
   });
   const upgraded = upgradeSnapshot({ ...state, label: "" });
   return {
     ...state,
-    config: { ...state.config, periodMinutes: 25 },
+    config: { ...state.config, periods: 1, periodMinutes: 25 },
+    status: upgraded.status,
+    currentPeriod: 1,
+    periodElapsedMs: upgraded.periodElapsedMs,
     players: upgraded.players,
+    logs: upgraded.logs,
     goals: upgraded.goals,
     undoStack: (state.undoStack ?? []).map(upgradeSnapshot),
   };

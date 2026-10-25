@@ -5,6 +5,7 @@ export type SoundCue =
   | "period"
   | "fulltime"
   | "sub"
+  | "stint"
   | "goal"
   | "conceded"
   | "gk"
@@ -14,6 +15,7 @@ export const SOUND_CUES: { cue: SoundCue; label: string; hint: string }[] = [
   { cue: "kickoff", label: "Avspark", hint: "Två korta signaler och en stigande vissling" },
   { cue: "resume", label: "Fortsätt", hint: "Kort uppåtvissling när klockan drar igång igen" },
   { cue: "pause", label: "Paus", hint: "Kort nedåtvissling" },
+  { cue: "stint", label: "Bytesdags (5m)", hint: "Dubbelpip när det är dags att förbereda byte" },
   { cue: "period", label: "Periodslut", hint: "Lång domarvissling när tiden är ute" },
   { cue: "fulltime", label: "Slutsignal", hint: "Lång vissling, en gång till" },
   { cue: "sub", label: "Byte", hint: "Bytebräda och en kort pip" },
@@ -119,6 +121,15 @@ function whistle(
 }
 
 export function playSound(cue: SoundCue) {
+  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+    try {
+      if (cue === "stint") navigator.vibrate([180, 90, 180]);
+      else if (cue === "period" || cue === "fulltime") navigator.vibrate([300, 120, 300]);
+      else if (cue === "sub" || cue === "goal") navigator.vibrate(80);
+    } catch {
+      // ignore
+    }
+  }
   const ctx = getCtx();
   if (!ctx) return;
   if (ctx.state === "suspended") {
@@ -140,6 +151,10 @@ export function playSound(cue: SoundCue) {
       break;
     case "pause":
       whistle(ctx, master, t, 1200, 520, 0.28, 0.11);
+      break;
+    case "stint":
+      tone(ctx, master, t, 880, 0.11, 0.16, "triangle");
+      tone(ctx, master, t + 0.15, 1175, 0.16, 0.18, "triangle");
       break;
     case "period":
       whistle(ctx, master, t, 980, 1240, 0.72, 0.18);

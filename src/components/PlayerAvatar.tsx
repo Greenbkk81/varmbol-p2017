@@ -94,7 +94,7 @@ export function PlayerAvatar({
         </span>
       )}
 
-      {!isGoalkeeper && posCode && !stat && (
+      {!isGoalkeeper && posCode && (
         <span className="absolute -top-1 -right-1.5 z-30 px-1 py-[1px] rounded-full bg-[#040d1a] text-[#facc15] text-[8px] font-mono-cm font-extrabold uppercase border border-[#facc15]/60 shadow leading-none">
           {posCode}
         </span>

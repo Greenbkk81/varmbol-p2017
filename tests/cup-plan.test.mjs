@@ -16,7 +16,7 @@ execFileSync(process.execPath, [resolve('typescript/bin/tsc'),
 after(() => rmSync(output, { recursive: true, force: true }));
 const { buildCupSetup, CUP_MATCHES, INITIAL_CUP_SETUP } = (await import(pathToFileURL(path.join(output, 'cup-plan.js')))).default;
 const { DEFAULT_ROSTER } = (await import(pathToFileURL(path.join(output, 'default-roster.js')))).default;
-const { createInitialMatchState, suggestSubstitutions, executeMultiSubstitution } = (await import(pathToFileURL(path.join(output, 'match-engine.js')))).default;
+const { createInitialMatchState, suggestSubstitutions, executeMultiSubstitution, undoLastAction, getCurrentPeriodElapsedMs, computePlayerMetrics } = (await import(pathToFileURL(path.join(output, 'match-engine.js')))).default;
 const create = (setup) => createInitialMatchState(setup.roster, setup.config, setup.pitchIds, setup.goalkeeperId);
 
 test('first match follows the handwritten plan in every position', () => {
@@ -77,4 +77,18 @@ test('starter order is respected independently of roster order for other formati
   const ids = ['p-oscar', 'p-scott', 'p-gabriel', 'p-oliver', 'p-holger'];
   const match = createInitialMatchState(DEFAULT_ROSTER, { ...INITIAL_CUP_SETUP.config, format: '5v5', formation: '2-2' }, ids, 'p-oscar');
   assert.deepEqual(match.players.filter(p => p.onPitch).sort((a, b) => a.pitchSlotIndex - b.pitchSlotIndex).map(p => p.id), ids);
+});
+
+test('undoing a substitution while clock is running preserves elapsed match and player time', () => {
+  let match = create(INITIAL_CUP_SETUP);
+  match = { ...match, status: 'running', lastTickTimestamp: 1000 };
+  const subTime = 1000 + 5 * 60_000; // 5:00 into Period 1
+  const suggestion = suggestSubstitutions(match, subTime, 3);
+  const afterSub = executeMultiSubstitution(match, suggestion.outIds, suggestion.inIds, subTime);
+  const undoTime = subTime + 3000; // 5:03 into Period 1
+  const undone = undoLastAction(afterSub, undoTime);
+  assert.equal(getCurrentPeriodElapsedMs(undone, undoTime), 5 * 60_000);
+  const metrics = computePlayerMetrics(undone, undoTime);
+  const oliver = metrics.find(m => m.player.id === 'p-oliver');
+  assert.equal(oliver.outfieldMs, 5 * 60_000);
 });

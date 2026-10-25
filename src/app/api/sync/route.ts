@@ -76,7 +76,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as Partial<LiveSyncSnapshot>;
+    const body = (await request.json()) as Partial<LiveSyncSnapshot> & {
+      force?: boolean;
+    };
     if (!body?.matchState || !Array.isArray(body.roster)) {
       return NextResponse.json(
         { ok: false, error: "Ogiltigt matchdata" },
@@ -85,6 +87,64 @@ export async function POST(request: Request) {
     }
 
     const current = await readSnapshot();
+    const isDifferentDevice =
+      current &&
+      current.controllerId &&
+      body.controllerId &&
+      current.controllerId !== body.controllerId;
+
+    const currentIsActive =
+      current &&
+      (current.matchState.status === "running" ||
+        current.matchState.periodElapsedMs > 0 ||
+        current.matchState.currentPeriod > 1);
+
+    const incomingIsFreshUnstarted =
+      body.matchState.status === "paused" &&
+      body.matchState.currentPeriod === 1 &&
+      body.matchState.periodElapsedMs === 0 &&
+      (body.matchState.logs?.length ?? 0) === 0;
+
+    if (
+      !body.force &&
+      isDifferentDevice &&
+      currentIsActive &&
+      incomingIsFreshUnstarted
+    ) {
+      return NextResponse.json(
+        {
+          ok: true,
+          ignored: true,
+          storage: hasBlobToken() ? "blob" : "memory",
+          version: current.version,
+          updatedAt: current.updatedAt,
+          snapshot: current,
+        },
+        {
+          headers: {
+            "Cache-Control": "no-store, max-age=0",
+          },
+        }
+      );
+    }
+
+    const incomingSaved = Array.isArray(body.savedMatches)
+      ? body.savedMatches
+      : [];
+    // Skydda tidigare sparade cupmatcher från att raderas av misstag av en telefon med tom historik
+    const mergedSavedMatches =
+      !body.force &&
+      current &&
+      Array.isArray(current.savedMatches) &&
+      current.savedMatches.length > incomingSaved.length
+        ? [
+            ...incomingSaved,
+            ...current.savedMatches.filter(
+              (oldMatch) => !incomingSaved.some((m) => m.id === oldMatch.id)
+            ),
+          ]
+        : incomingSaved;
+
     const version = (current?.version ?? 0) + 1;
     const snapshot: LiveSyncSnapshot = {
       version,
@@ -93,7 +153,7 @@ export async function POST(request: Request) {
       controllerLabel: body.controllerLabel,
       roster: body.roster,
       matchState: body.matchState,
-      savedMatches: Array.isArray(body.savedMatches) ? body.savedMatches : [],
+      savedMatches: mergedSavedMatches,
     };
 
     const storage = await writeSnapshot(snapshot);

@@ -100,8 +100,8 @@ function buildMatchSummary(state: MatchState, ts: number): SavedMatchSummary {
 }
 
 const STORAGE_KEYS = {
-  roster: "varmbol_p2017_roster_v2",
-  activeMatch: "varmbol_p2017_active_match_v2",
+  roster: "varmbol_p2017_roster_v3",
+  activeMatch: "varmbol_p2017_active_match_v3",
   history: "varmbol_p2017_history_v2",
   sound: "varmbol_p2017_sound_v1",
   syncMode: "varmbol_p2017_sync_mode_v1",
@@ -407,7 +407,9 @@ export function VarmbolMatchApp() {
   const deviceIdRef = useRef<string>("device");
   const lastRemoteVersionRef = useRef<number>(0);
   const skipNextPushRef = useRef<boolean>(false);
+  const forceNextPushRef = useRef<boolean>(false);
   const periodAlertedRef = useRef<number | null>(null);
+  const stintAlertedKeyRef = useRef<string>("");
 
   // Ladda från localStorage
   useEffect(() => {
@@ -562,7 +564,20 @@ export function VarmbolMatchApp() {
         setSyncUpdatedAt(snapshot.updatedAt);
       }
       skipNextPushRef.current = true;
-      const normalized = normalizeMatchState(snapshot.matchState);
+      const clockSkewMs =
+        typeof snapshot.updatedAt === "number"
+          ? Date.now() - snapshot.updatedAt
+          : 0;
+      const adjustedMatchState =
+        snapshot.matchState.status === "running" &&
+        snapshot.matchState.lastTickTimestamp !== null
+          ? {
+              ...snapshot.matchState,
+              lastTickTimestamp:
+                snapshot.matchState.lastTickTimestamp + clockSkewMs,
+            }
+          : snapshot.matchState;
+      const normalized = normalizeMatchState(adjustedMatchState);
       setMatchState(normalized);
       setDraftConfig(normalized.config);
       if (Array.isArray(snapshot.roster) && snapshot.roster.length > 0) {
@@ -614,6 +629,8 @@ export function VarmbolMatchApp() {
       skipNextPushRef.current = false;
       return;
     }
+    const shouldForce = forceNextPushRef.current;
+    forceNextPushRef.current = false;
     const timer = setTimeout(async () => {
       try {
         const res = await fetch("/api/sync", {
@@ -621,6 +638,7 @@ export function VarmbolMatchApp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             controllerId: deviceIdRef.current,
+            force: shouldForce,
             roster,
             matchState,
             savedMatches,
@@ -632,6 +650,12 @@ export function VarmbolMatchApp() {
         }
         const data = await res.json();
         setSyncError(false);
+        if (data?.ignored && data?.snapshot) {
+          // En annan telefon styr redan en aktiv match — växla automatiskt till Följ så vi inte skriver över den!
+          setSyncMode("follow");
+          applyRemoteSnapshot(data.snapshot);
+          return;
+        }
         if (typeof data?.version === "number") {
           lastRemoteVersionRef.current = data.version;
         }
@@ -641,7 +665,7 @@ export function VarmbolMatchApp() {
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [hydrated, syncMode, roster, matchState, savedMatches]);
+  }, [hydrated, syncMode, roster, matchState, savedMatches, applyRemoteSnapshot]);
 
   // Följande telefon hämtar live varannan sekund
   useEffect(() => {
@@ -674,12 +698,14 @@ export function VarmbolMatchApp() {
     return () => clearInterval(interval);
   }, []);
 
-  // Wake Lock på Android
+  // Wake Lock på Android & iOS (återaktiveras automatiskt när skärmen väcks)
   useEffect(() => {
     let wakeLock: WakeLockSentinel | null = null;
     async function requestWakeLock() {
       if (
         matchState.status === "running" &&
+        typeof document !== "undefined" &&
+        document.visibilityState === "visible" &&
         typeof navigator !== "undefined" &&
         "wakeLock" in navigator
       ) {
@@ -694,8 +720,16 @@ export function VarmbolMatchApp() {
         }
       }
     }
+    function handleVisibilityChange() {
+      setNow(Date.now());
+      if (document.visibilityState === "visible") {
+        requestWakeLock();
+      }
+    }
     requestWakeLock();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (wakeLock) {
         wakeLock.release().catch(() => {});
       }
@@ -728,6 +762,35 @@ export function VarmbolMatchApp() {
     isPeriodOvertime,
     matchState.status,
     matchState.currentPeriod,
+    soundEnabled,
+  ]);
+
+  // Ljud- & vibrationspåminnelse när 5-minutersgränsen (stintMinutes) passeras
+  useEffect(() => {
+    if (matchState.status !== "running" || isPeriodOvertime) return;
+    const stintMs = resolveStintMinutes(matchState.config) * 60 * 1000;
+    const hasAlert = playerMetrics.some(
+      (m) => m.player.onPitch && !m.player.isGoalkeeper && m.stintAlert
+    );
+    if (!hasAlert) return;
+    const bucket = Math.floor(periodElapsedMs / stintMs);
+    if (bucket < 1) return;
+    const key = `${matchState.id}-P${matchState.currentPeriod}-B${bucket}`;
+    if (stintAlertedKeyRef.current !== key) {
+      stintAlertedKeyRef.current = key;
+      if (soundEnabled) {
+        resumeSound();
+        playSound("stint");
+      }
+    }
+  }, [
+    matchState.id,
+    matchState.status,
+    matchState.currentPeriod,
+    matchState.config,
+    isPeriodOvertime,
+    periodElapsedMs,
+    playerMetrics,
     soundEnabled,
   ]);
 
@@ -834,6 +897,9 @@ export function VarmbolMatchApp() {
   const isFollowing = syncMode === "follow";
 
   function handleSetSyncMode(nextMode: SyncMode) {
+    if (nextMode === "control") {
+      forceNextPushRef.current = true;
+    }
     setSyncMode(nextMode);
     if (nextMode === "follow") {
       clearSubSelection();
@@ -962,7 +1028,7 @@ export function VarmbolMatchApp() {
     setNow(ts);
     setMatchState((prev) => {
       if (prev.status === "running") {
-        const withSnap = pushUndoSnapshot(prev, "Pausa klockan");
+        const withSnap = pushUndoSnapshot(prev, "Pausa klockan", ts);
         const committed = commitRunningTime(withSnap, ts);
         return {
           ...committed,
@@ -972,7 +1038,7 @@ export function VarmbolMatchApp() {
       } else {
         const totalMatchMs = getTotalMatchElapsedMs(prev, ts);
         const updatedPlayers =
-          prev.periodElapsedMs === 0
+          prev.currentPeriod === 1 && prev.periodElapsedMs === 0
             ? prev.players.map((p) => ({
                 ...p,
                 currentStintStartMatchMs: totalMatchMs,
@@ -992,17 +1058,30 @@ export function VarmbolMatchApp() {
   function handleEndPeriod() {
     if (isFollowing) return;
     const ts = Date.now();
+    const elapsedInPeriod = getCurrentPeriodElapsedMs(matchState, ts);
+    const targetMs = matchState.config.periodMinutes * 60 * 1000;
+    if (matchState.status === "running" && elapsedInPeriod < targetMs) {
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm(
+          `Period ${matchState.currentPeriod} har bara gått ${formatDurationMmSs(
+            elapsedInPeriod
+          )} av ${matchState.config.periodMinutes}:00. Vill du avsluta perioden nu?`
+        )
+      ) {
+        return;
+      }
+    }
     const isLastPeriod =
       matchState.currentPeriod >= matchState.config.periods;
     const alreadyWhistled =
-      matchState.status === "running" &&
-      getCurrentPeriodElapsedMs(matchState, ts) >=
-        matchState.config.periodMinutes * 60 * 1000;
+      matchState.status === "running" && elapsedInPeriod >= targetMs;
     setNow(ts);
     setMatchState((prev) => {
       const withSnap = pushUndoSnapshot(
         prev,
-        `Avsluta period ${prev.currentPeriod}`
+        `Avsluta period ${prev.currentPeriod}`,
+        ts
       );
       const committed = commitRunningTime(withSnap, ts);
       const isLastPeriod = committed.currentPeriod >= committed.config.periods;
@@ -1015,16 +1094,28 @@ export function VarmbolMatchApp() {
         };
       }
 
+      const oldTotalMs = getTotalMatchElapsedMs(committed, ts);
+      const nextPeriod = committed.currentPeriod + 1;
+      const newTotalMs =
+        (nextPeriod - 1) * committed.config.periodMinutes * 60 * 1000;
+      const shiftMs = newTotalMs - oldTotalMs;
+
       return {
         ...committed,
         status: "period_break",
-        currentPeriod: committed.currentPeriod + 1,
+        currentPeriod: nextPeriod,
         periodElapsedMs: 0,
         lastTickTimestamp: null,
+        players: committed.players.map((p) => ({
+          ...p,
+          currentStintStartMatchMs: Math.max(
+            0,
+            p.currentStintStartMatchMs + shiftMs
+          ),
+        })),
       };
     });
     clearSubSelection();
-    setGkModalOpen(true);
     if (isLastPeriod) cue("fulltime");
     else if (!alreadyWhistled) cue("period");
   }
@@ -1157,10 +1248,65 @@ export function VarmbolMatchApp() {
     const cupMatch = CUP_MATCHES.find((match) => match.id === preset.id);
     if (cupMatch) {
       const setup = buildCupSetup(cupMatch, roster);
-      setRoster(setup.roster);
-      setDraftConfig({ ...setup.config, stintMinutes: draftConfig.stintMinutes });
-      setSetupPitchIds(setup.pitchIds);
-      setSetupGkId(setup.goalkeeperId);
+      // Bevara manuell frånvaro/skada om tränaren har bockat ur någon i dagens trupp
+      const currentActiveMap = new Map(
+        roster.map((p) => [p.id, p.activeInSquad])
+      );
+      const preservedRoster = setup.roster.map((p) => ({
+        ...p,
+        activeInSquad:
+          p.activeInSquad && currentActiveMap.get(p.id) === false
+            ? false
+            : p.activeInSquad,
+      }));
+      const activeCount = preservedRoster.filter((p) => p.activeInSquad).length;
+      const finalRoster =
+        activeCount >= getPitchCapacity(setup.config.format)
+          ? preservedRoster
+          : setup.roster;
+
+      const activeSet = new Set(
+        finalRoster.filter((p) => p.activeInSquad).map((p) => p.id)
+      );
+      const cap = getPitchCapacity(setup.config.format);
+      const gkId = activeSet.has(setup.goalkeeperId)
+        ? setup.goalkeeperId
+        : finalRoster.find((p) => p.activeInSquad)?.id ?? setup.goalkeeperId;
+
+      // Om det redan har spelats matcher i cupen (eller för match 2, 3, 4), prioritera de 6 utespelare som har minst speltid hittills
+      let starters = setup.pitchIds.filter((id) => activeSet.has(id));
+      if (cupRows.length > 0 && cupMatch.id !== CUP_MATCHES[0].id) {
+        const cupTimeById = new Map(
+          cupRows.map((r) => [r.id, r.totalPlayMs - r.goalkeeperMs])
+        );
+        const outfieldCandidates = finalRoster
+          .filter((p) => p.activeInSquad && p.id !== gkId)
+          .sort((a, b) => {
+            const timeA = cupTimeById.get(a.id) ?? 0;
+            const timeB = cupTimeById.get(b.id) ?? 0;
+            if (Math.abs(timeA - timeB) > 10_000) return timeA - timeB;
+            return setup.pitchIds.includes(a.id) ? 1 : -1;
+          });
+        starters = [
+          gkId,
+          ...outfieldCandidates.slice(0, cap - 1).map((p) => p.id),
+        ];
+      } else {
+        for (const p of finalRoster) {
+          if (starters.length >= cap) break;
+          if (p.activeInSquad && !starters.includes(p.id)) {
+            starters.push(p.id);
+          }
+        }
+      }
+
+      setRoster(finalRoster);
+      setDraftConfig({
+        ...setup.config,
+        stintMinutes: draftConfig.stintMinutes,
+      });
+      setSetupPitchIds(starters.slice(0, cap));
+      setSetupGkId(gkId);
       return;
     }
     const nextConfig: MatchConfig = {
@@ -1177,6 +1323,34 @@ export function VarmbolMatchApp() {
     const cap = getPitchCapacity(preset.format);
     const activeIds = roster.filter((r) => r.activeInSquad).map((r) => r.id);
     setSetupPitchIds(activeIds.slice(0, cap));
+  }
+
+  function handleRotateStartersByCupFairness() {
+    if (isFollowing) return;
+    const cap = getPitchCapacity(draftConfig.format);
+    const activePlayers = roster.filter((p) => p.activeInSquad);
+    const gkId = activePlayers.some((p) => p.id === setupGkId)
+      ? setupGkId
+      : activePlayers[0]?.id ?? setupGkId;
+    const cupTimeById = new Map(
+      cupRows.map((r) => [r.id, r.totalPlayMs - r.goalkeeperMs])
+    );
+    const currentPitchSet = new Set(setupPitchIds);
+    const sortedOutfield = activePlayers
+      .filter((p) => p.id !== gkId)
+      .sort((a, b) => {
+        const timeA = cupTimeById.get(a.id) ?? 0;
+        const timeB = cupTimeById.get(b.id) ?? 0;
+        if (Math.abs(timeA - timeB) > 5_000) return timeA - timeB;
+        // Om cup-tiden är lika (t.ex. före match 1), sätt in de som just nu är på bänken!
+        const aOnPitch = currentPitchSet.has(a.id) ? 1 : 0;
+        const bOnPitch = currentPitchSet.has(b.id) ? 1 : 0;
+        return aOnPitch - bOnPitch;
+      });
+    setSetupPitchIds([
+      gkId,
+      ...sortedOutfield.slice(0, cap - 1).map((p) => p.id),
+    ]);
   }
 
   function handleTogglePlayerInSquad(playerId: string) {
@@ -1222,7 +1396,18 @@ export function VarmbolMatchApp() {
   function handleStartNewMatchFromSetup() {
     if (isFollowing) return;
     const ts = Date.now();
-    if (getTotalMatchElapsedMs(matchState, ts) > 20_000) {
+    const elapsedMs = getTotalMatchElapsedMs(matchState, ts);
+    if (elapsedMs > 5_000 && matchState.status !== "finished") {
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm(
+          `Pågående match mot ${matchState.config.opponent} sparas i cuploggen och en ny match mot ${draftConfig.opponent} startas på 0:00. Fortsätt?`
+        )
+      ) {
+        return;
+      }
+    }
+    if (elapsedMs > 20_000) {
       rememberMatch(matchState, ts);
     }
 
@@ -1250,10 +1435,12 @@ export function VarmbolMatchApp() {
       validStarters,
       gk
     );
+    forceNextPushRef.current = true;
     setMatchState(freshState);
     clearSubSelection();
     setGoalPick(null);
     periodAlertedRef.current = null;
+    stintAlertedKeyRef.current = "";
     setActiveTab("match");
   }
 
@@ -1285,6 +1472,31 @@ export function VarmbolMatchApp() {
     selectedOutIds.length === selectedInIds.length;
   const canSwapPitchPair =
     selectedOutIds.length === 2 && selectedInIds.length === 0;
+
+  // Tydlig sammanfattning av valda byten inklusive positionskod (t.ex. "Charlie ➔ Oliver (VM)")
+  const subPairsSummary = useMemo(() => {
+    const count = Math.max(selectedOutIds.length, selectedInIds.length);
+    if (count === 0) return "";
+    const parts: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const outP = selectedOutIds[i]
+        ? matchState.players.find((p) => p.id === selectedOutIds[i])
+        : undefined;
+      const inP = selectedInIds[i]
+        ? matchState.players.find((p) => p.id === selectedInIds[i])
+        : undefined;
+      const pos = outP ? pitchPositionCode(matchState, outP) : null;
+      const posText = pos ? ` (${pos})` : "";
+      if (inP && outP) {
+        parts.push(`${inP.name} ➔ ${outP.name}${posText}`);
+      } else if (outP) {
+        parts.push(`? ➔ ${outP.name}${posText}`);
+      } else if (inP) {
+        parts.push(`${inP.name} ➔ ?`);
+      }
+    }
+    return parts.join(" · ");
+  }, [selectedOutIds, selectedInIds, matchState]);
 
   function metricFor(m: ComputedPlayerMetrics) {
     const ms =
@@ -1546,8 +1758,8 @@ export function VarmbolMatchApp() {
             : "max-w-4xl w-full mx-auto px-2.5 sm:px-4 pt-3 flex-1 space-y-3"
         }
       >
-        {isFollowing && !focusMode && (
-          <div className="rounded-lg bg-emerald-400/15 border border-emerald-400/40 px-3 py-1.5 flex items-center justify-between gap-2 font-mono-cm text-xs text-emerald-200">
+        {isFollowing && (
+          <div className="rounded-lg bg-emerald-400/15 border border-emerald-400/40 px-2.5 py-1 flex items-center justify-between gap-2 font-mono-cm text-[11px] text-emerald-200 shrink-0">
             <span className="truncate">
               Följer live — klockan och bytena styrs från en annan telefon
               {syncUpdatedAt
@@ -1583,17 +1795,8 @@ export function VarmbolMatchApp() {
                     }`}
                   >
                     <div
-                      onClick={handleToggleClock}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          handleToggleClock();
-                        }
-                      }}
-                      title="Tryck för att starta eller pausa matchklockan"
-                      className="flex flex-col justify-center cursor-pointer select-none shrink-0"
+                      title="Matchklocka"
+                      className="flex flex-col justify-center select-none shrink-0"
                     >
                       <div className="flex items-center gap-1 leading-none mb-0.5 whitespace-nowrap">
                         <span className="px-1.5 py-[1px] rounded bg-[#005cb9] text-[10px] font-mono-cm font-extrabold uppercase text-white">
@@ -1665,11 +1868,15 @@ export function VarmbolMatchApp() {
                       </button>
 
                       {periodElapsedMs > 0 &&
-                        matchState.status !== "running" && (
+                        (matchState.status !== "running" || isPeriodOvertime) && (
                           <button
                             type="button"
                             onClick={handleEndPeriod}
-                            className="py-2 px-1.5 rounded-lg font-mono-cm font-extrabold text-[10px] uppercase bg-[#102649] text-sky-200 border border-sky-400/30 active:scale-95 whitespace-nowrap"
+                            className={`py-2 px-2 rounded-lg font-mono-cm font-extrabold text-[11px] uppercase border active:scale-95 whitespace-nowrap ${
+                              isPeriodOvertime
+                                ? "bg-[#facc15] text-slate-950 border-yellow-200 animate-pulse"
+                                : "bg-[#102649] text-sky-200 border-sky-400/30"
+                            }`}
                             title="Nästa period eller avsluta match"
                           >
                             {matchState.currentPeriod >=
@@ -1799,17 +2006,12 @@ export function VarmbolMatchApp() {
                     <button
                       type="button"
                       onClick={() =>
-                        handleSetSyncMode(
-                          syncMode === "control" ? "follow" : "control"
-                        )
+                        setTokenStat((s) => (s === "play" ? "stint" : "play"))
                       }
-                      className={`px-1.5 py-0.5 rounded font-mono-cm font-extrabold text-[10px] uppercase border ${
-                        syncMode === "follow"
-                          ? "bg-emerald-400 text-slate-950 border-emerald-200"
-                          : "bg-[#040a14] text-sky-200 border-sky-400/30"
-                      }`}
+                      title="Växla siffran under spelarna: Total speltid eller Inne nu (stint)"
+                      className="px-1.5 py-0.5 rounded font-mono-cm font-extrabold text-[10px] uppercase border bg-[#040a14] text-sky-200 border-sky-400/30"
                     >
-                      {syncMode === "follow" ? "Följer" : "Styr"}
+                      {tokenStat === "stint" ? "Inne nu" : "Speltid"}
                     </button>
 
                     {matchState.undoStack.length > 0 && (
@@ -1914,7 +2116,7 @@ export function VarmbolMatchApp() {
                           {!goalPick && isSelectedOut && (
                             <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-[1px] rounded bg-orange-500 text-slate-950 font-mono-cm font-extrabold text-[8px] uppercase shadow">
                               {pairedInPlayer
-                                ? `UT ${pairedInPlayer.name}`
+                                ? `⇄ ${pairedInPlayer.name}`
                                 : `UT ${outOrderIndex + 1}`}
                             </span>
                           )}
@@ -1928,6 +2130,7 @@ export function VarmbolMatchApp() {
                             isGoalkeeper={m.player.isGoalkeeper}
                             isSelected={isSelectedOut}
                             selectionType="out"
+                            posCode={slot.code}
                             highlight={
                               goalPick
                                 ? goalPick.phase === "assist" &&
@@ -1944,11 +2147,10 @@ export function VarmbolMatchApp() {
                             statTone={metric.tone}
                           />
                           <span
-                            className={`absolute left-1/2 top-[calc(100%+8px)] -translate-x-1/2 max-w-[4.2rem] truncate text-center font-display font-extrabold text-[10px] uppercase leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] ${
+                            className={`absolute left-1/2 top-[calc(100%+8px)] -translate-x-1/2 max-w-[5.2rem] truncate text-center font-display font-extrabold text-[10px] uppercase leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] ${
                               isSelectedOut ? "text-orange-300" : "text-white"
                             }`}
                           >
-                            {m.player.number ? `${m.player.number} ` : ""}
                             {m.player.name}
                           </span>
                         </button>
@@ -1960,63 +2162,86 @@ export function VarmbolMatchApp() {
 
               {/* Kompakt bytesrad direkt över bänken när spelare är valda */}
               {(selectedOutIds.length > 0 || selectedInIds.length > 0) && (
-                <div className="rounded-lg bg-[#040c1a] border border-[#facc15] px-2.5 py-1.5 flex items-center justify-between gap-2 shrink-0">
-                  <div className="font-mono-cm text-[11px] truncate text-white">
-                    <span className="text-orange-300 font-bold">
-                      UT {selectedOutIds.length}
-                    </span>
-                    {" ⇄ "}
-                    <span className="text-emerald-300 font-bold">
-                      IN {selectedInIds.length}
-                    </span>
+                <div className="rounded-lg bg-[#040c1a] border border-[#facc15] px-2.5 py-1.5 flex flex-col gap-1 shrink-0">
+                  <div className="font-mono-cm text-[11px] font-bold text-[#facc15] leading-tight">
+                    {subPairsSummary}
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={clearSubSelection}
-                      className="px-2 py-1 rounded bg-slate-800 text-slate-200 font-display font-bold uppercase text-[11px]"
-                    >
-                      Avbryt
-                    </button>
-                    {canSwapPitchPair && (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-mono-cm text-[10px] text-slate-300">
+                      <span className="text-emerald-300 font-bold">
+                        IN {selectedInIds.length}
+                      </span>
+                      {" ➔ "}
+                      <span className="text-orange-300 font-bold">
+                        UT {selectedOutIds.length}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
-                        onClick={handleSwapTwoPitchPlayers}
-                        className="px-2.5 py-1 rounded bg-[#005cb9] text-white font-display font-extrabold uppercase text-[11px] border border-sky-300"
+                        onClick={clearSubSelection}
+                        className="px-2 py-1 rounded bg-slate-800 text-slate-200 font-display font-bold uppercase text-[11px]"
                       >
-                        Skifta plats
+                        Avbryt
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      disabled={!canExecuteSub}
-                      onClick={handleConfirmSubstitution}
-                      className={`px-3 py-1 rounded font-display font-extrabold text-xs uppercase flex items-center gap-1 ${
-                        canExecuteSub
-                          ? "bg-emerald-400 text-slate-950"
-                          : "bg-slate-800 text-slate-500 cursor-not-allowed"
-                      }`}
-                    >
-                      <ArrowLeftRight className="w-3.5 h-3.5" />
-                      <span>
-                        {selectedMismatch
-                          ? `Välj ${Math.max(
-                              selectedOutIds.length,
-                              selectedInIds.length
-                            )}`
-                          : "Genomför byte"}
-                      </span>
-                    </button>
+                      {canSwapPitchPair && (
+                        <button
+                          type="button"
+                          onClick={handleSwapTwoPitchPlayers}
+                          className="px-2.5 py-1 rounded bg-[#005cb9] text-white font-display font-extrabold uppercase text-[11px] border border-sky-300"
+                        >
+                          Skifta plats
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={!canExecuteSub}
+                        onClick={handleConfirmSubstitution}
+                        className={`px-3 py-1 rounded font-display font-extrabold text-xs uppercase flex items-center gap-1 ${
+                          canExecuteSub
+                            ? "bg-emerald-400 text-slate-950"
+                            : "bg-slate-800 text-slate-500 cursor-not-allowed"
+                        }`}
+                      >
+                        <ArrowLeftRight className="w-3.5 h-3.5" />
+                        <span>
+                          {selectedMismatch
+                            ? `Välj ${Math.max(
+                                selectedOutIds.length,
+                                selectedInIds.length
+                              )}`
+                            : "Genomför byte"}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Avbytarbänken på en enda horisontell rad längst ner */}
               <section className="cm-bevel rounded-xl px-2 py-2 shrink-0">
-                <div className="grid grid-cols-5 gap-1">
-                  {benchMetrics.map((m) => {
+                <div
+                  className={`grid gap-1 ${
+                    benchMetrics.length <= 3
+                      ? "grid-cols-3"
+                      : benchMetrics.length === 4
+                      ? "grid-cols-4"
+                      : "grid-cols-5"
+                  }`}
+                >
+                  {benchMetrics.map((m, idx) => {
                     const inOrderIndex = selectedInIds.indexOf(m.player.id);
                     const isSelectedIn = inOrderIndex !== -1;
+                    const pairedOutId =
+                      isSelectedIn && selectedOutIds[inOrderIndex]
+                        ? selectedOutIds[inOrderIndex]
+                        : undefined;
+                    const pairedOutPlayer = pairedOutId
+                      ? matchState.players.find((p) => p.id === pairedOutId)
+                      : undefined;
+                    const pairedPos = pairedOutPlayer
+                      ? pitchPositionCode(matchState, pairedOutPlayer)
+                      : null;
                     const metric = metricFor(m);
 
                     return (
@@ -2044,12 +2269,20 @@ export function VarmbolMatchApp() {
                           statTone={metric.tone}
                         />
                         <span
-                          className={`mt-2.5 max-w-full truncate text-center font-display font-extrabold text-[10px] uppercase leading-none ${
+                          className={`mt-2 max-w-full truncate text-center font-display font-extrabold text-[10px] uppercase leading-none ${
                             isSelectedIn ? "text-emerald-300" : "text-white"
                           }`}
                         >
-                          {m.player.number ? `${m.player.number} ` : ""}
                           {m.player.name}
+                        </span>
+                        <span className="mt-0.5 max-w-full truncate text-center font-mono-cm text-[9px] text-slate-300 leading-none">
+                          {isSelectedIn && pairedOutPlayer
+                            ? `➔ ${pairedOutPlayer.name}${
+                                pairedPos ? ` (${pairedPos})` : ""
+                              }`
+                            : idx === 0
+                            ? "Tur in"
+                            : "Bänk"}
                         </span>
                       </button>
                     );
@@ -2470,7 +2703,7 @@ export function VarmbolMatchApp() {
                         {!goalPick && isSelectedOut && (
                           <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap px-1 py-[1px] rounded bg-orange-500 text-slate-950 font-mono-cm font-extrabold text-[8px] uppercase shadow">
                             {pairedInPlayer
-                              ? `UT ${pairedInPlayer.name}`
+                              ? `⇄ ${pairedInPlayer.name}`
                               : `UT ${outOrderIndex + 1}`}
                           </span>
                         )}
@@ -2484,6 +2717,7 @@ export function VarmbolMatchApp() {
                           isGoalkeeper={m.player.isGoalkeeper}
                           isSelected={isSelectedOut}
                           selectionType="out"
+                          posCode={slot.code}
                           highlight={
                             goalPick
                               ? goalPick.phase === "assist" &&
@@ -2500,11 +2734,10 @@ export function VarmbolMatchApp() {
                           statTone={metric.tone}
                         />
                         <span
-                          className={`absolute left-1/2 top-[calc(100%+10px)] -translate-x-1/2 max-w-[4.4rem] truncate text-center font-display font-extrabold text-[10px] sm:text-[11px] uppercase leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] ${
+                          className={`absolute left-1/2 top-[calc(100%+10px)] -translate-x-1/2 max-w-[5.2rem] truncate text-center font-display font-extrabold text-[10px] sm:text-[11px] uppercase leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] ${
                             isSelectedOut ? "text-orange-300" : "text-white"
                           }`}
                         >
-                          {m.player.number ? `${m.player.number} ` : ""}
                           {m.player.name}
                         </span>
                       </button>
@@ -2688,10 +2921,15 @@ export function VarmbolMatchApp() {
                     const pairedOutPlayer = pairedOutId
                       ? matchState.players.find((p) => p.id === pairedOutId)
                       : undefined;
+                    const pairedPos = pairedOutPlayer
+                      ? pitchPositionCode(matchState, pairedOutPlayer)
+                      : null;
                     const metric = metricFor(m);
                     const subtitle = isSelectedIn
                       ? pairedOutPlayer
-                        ? `In för ${pairedOutPlayer.name}`
+                        ? `➔ ${pairedOutPlayer.name}${
+                            pairedPos ? ` (${pairedPos})` : ""
+                          }`
                         : `In #${inOrderIndex + 1}`
                       : idx === 0
                       ? "Tur att gå in"
@@ -2973,17 +3211,27 @@ export function VarmbolMatchApp() {
                     anmälda · {setupPitchIds.length}/{pitchCapacity} startar)
                   </h3>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setRoster((prev) =>
-                      prev.map((p) => ({ ...p, activeInSquad: true }))
-                    )
-                  }
-                  className="px-2.5 py-1 rounded bg-[#061224] border border-sky-400/30 text-xs font-mono-cm text-sky-200"
-                >
-                  Välj alla {roster.length}
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleRotateStartersByCupFairness}
+                    className="px-2.5 py-1 rounded bg-[#0f2547] hover:bg-[#173562] border border-[#facc15]/50 text-xs font-mono-cm font-bold text-[#facc15]"
+                    title="Välj de 6 utespelare som spelat minst i cupen hittills (eller bänkspelarna) i startelvan"
+                  >
+                    ⚡ Rotera startspelare (minst cuptid)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRoster((prev) =>
+                        prev.map((p) => ({ ...p, activeInSquad: true }))
+                      )
+                    }
+                    className="px-2.5 py-1 rounded bg-[#061224] border border-sky-400/30 text-xs font-mono-cm text-sky-200"
+                  >
+                    Välj alla {roster.length}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -3357,6 +3605,11 @@ export function VarmbolMatchApp() {
             <div className="max-w-4xl mx-auto cm-bevel rounded-xl p-3 border-2 border-[#facc15]">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="space-y-1 font-mono-cm text-xs">
+                  {subPairsSummary && (
+                    <div className="font-bold text-[#facc15] text-sm">
+                      {subPairsSummary}
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="px-1.5 py-0.5 rounded bg-orange-500 text-slate-950 font-extrabold">
                       ▼ UT ({selectedOutIds.length}):

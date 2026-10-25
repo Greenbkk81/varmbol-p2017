@@ -112,31 +112,34 @@ export function commitRunningTime(
 
 export function createSnapshot(
   state: MatchState,
-  label: string
+  label: string,
+  now: number = Date.now()
 ): MatchSnapshot {
+  const synced = commitRunningTime(state, now);
   return {
     label,
-    status: state.status,
-    currentPeriod: state.currentPeriod,
-    periodElapsedMs: state.periodElapsedMs,
-    lastTickTimestamp: state.lastTickTimestamp,
-    players: state.players.map((p) => ({
+    status: synced.status,
+    currentPeriod: synced.currentPeriod,
+    periodElapsedMs: synced.periodElapsedMs,
+    lastTickTimestamp: synced.lastTickTimestamp,
+    players: synced.players.map((p) => ({
       ...p,
       gkPeriods: [...p.gkPeriods],
       positionMs: { ...(p.positionMs ?? {}) },
     })),
-    logs: state.logs.map((l) => ({ ...l })),
-    ourScore: state.ourScore,
-    opponentScore: state.opponentScore,
-    goals: (state.goals ?? []).map((goal) => ({ ...goal })),
+    logs: synced.logs.map((l) => ({ ...l })),
+    ourScore: synced.ourScore,
+    opponentScore: synced.opponentScore,
+    goals: (synced.goals ?? []).map((goal) => ({ ...goal })),
   };
 }
 
 export function pushUndoSnapshot(
   state: MatchState,
-  label: string
+  label: string,
+  now: number = Date.now()
 ): MatchState {
-  const snap = createSnapshot(state, label);
+  const snap = createSnapshot(state, label, now);
   const nextStack = [snap, ...state.undoStack].slice(0, 15);
   return {
     ...state,
@@ -445,7 +448,8 @@ export function executeMultiSubstitution(
 
   const withSnap = pushUndoSnapshot(
     state,
-    `Byte (${outIds.length} mot ${inIds.length})`
+    `Byte (${outIds.length} mot ${inIds.length})`,
+    now
   );
   const committed = commitRunningTime(withSnap, now);
   const totalMatchMs = getTotalMatchElapsedMs(committed, now);
@@ -540,7 +544,8 @@ export function swapPitchPositions(
 
   const withSnap = pushUndoSnapshot(
     state,
-    `Positionsbyte ${playerA.name} ⇄ ${playerB.name}`
+    `Positionsbyte ${playerA.name} ⇄ ${playerB.name}`,
+    now
   );
   const committed = commitRunningTime(withSnap, now);
 
@@ -590,7 +595,7 @@ export function assignGoalkeeperCollar(
   const target = state.players.find((p) => p.id === targetPlayerId);
   if (!target || target.isGoalkeeper) return state;
 
-  const withSnap = pushUndoSnapshot(state, `Ny målvakt: ${target.name}`);
+  const withSnap = pushUndoSnapshot(state, `Ny målvakt: ${target.name}`, now);
   const committed = commitRunningTime(withSnap, now);
   const totalMatchMs = getTotalMatchElapsedMs(committed, now);
   const capacity = getPitchCapacity(committed.config.format);
@@ -670,17 +675,19 @@ export function addOurGoal(
 }
 
 export function addOpponentGoal(state: MatchState, now: number): MatchState {
+  const committed = commitRunningTime(state, now);
+  const withUndo = pushUndoSnapshot(committed, "Baklängesmål", now);
   const goal: GoalRecord = {
     id: `goal-${now}-${Math.random().toString(36).slice(2, 6)}`,
     side: "theirs",
-    period: state.currentPeriod,
-    matchTimeMs: getTotalMatchElapsedMs(state, now),
+    period: withUndo.currentPeriod,
+    matchTimeMs: getTotalMatchElapsedMs(withUndo, now),
     assistResolved: true,
   };
   return {
-    ...state,
-    opponentScore: state.opponentScore + 1,
-    goals: [...(state.goals ?? []), goal],
+    ...withUndo,
+    opponentScore: withUndo.opponentScore + 1,
+    goals: [...(withUndo.goals ?? []), goal],
   };
 }
 

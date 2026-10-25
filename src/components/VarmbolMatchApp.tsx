@@ -3395,8 +3395,8 @@ export function VarmbolMatchApp() {
                   <label className="block text-[11px] font-mono-cm font-bold uppercase text-sky-300 mb-1">
                     Antal Perioder
                   </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {[2, 3, 4].map((pCount) => (
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[1, 2, 3, 4].map((pCount) => (
                       <button
                         key={pCount}
                         type="button"

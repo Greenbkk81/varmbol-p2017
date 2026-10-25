@@ -14,7 +14,7 @@ execFileSync(process.execPath, [resolve('typescript/bin/tsc'),
   '--module', 'commonjs', '--target', 'es2020', '--skipLibCheck', '--strict',
 ], { cwd: fileURLToPath(new URL('..', import.meta.url)) });
 after(() => rmSync(output, { recursive: true, force: true }));
-const { buildCupSetup, CUP_MATCHES, INITIAL_CUP_SETUP } = (await import(pathToFileURL(path.join(output, 'cup-plan.js')))).default;
+const { buildCupSetup, CUP_MATCHES, INITIAL_CUP_SETUP, upgradeCupDuration } = (await import(pathToFileURL(path.join(output, 'cup-plan.js')))).default;
 const { DEFAULT_ROSTER } = (await import(pathToFileURL(path.join(output, 'default-roster.js')))).default;
 const { createInitialMatchState, suggestSubstitutions, executeMultiSubstitution, undoLastAction, getCurrentPeriodElapsedMs, computePlayerMetrics } = (await import(pathToFileURL(path.join(output, 'match-engine.js')))).default;
 const create = (setup) => createInitialMatchState(setup.roster, setup.config, setup.pitchIds, setup.goalkeeperId);
@@ -39,7 +39,7 @@ test('all four fixtures have the correct time, opponent, venue and goalkeeper', 
     assert.equal(match.players.filter(p => p.onPitch).length, 7);
     assert.deepEqual(match.players.filter(p => p.isGoalkeeper).map(p => p.id), [fixture.goalkeeperId]);
     assert.deepEqual(match.players.filter(p => p.onPitch).map(p => p.pitchSlotIndex).sort(), [0, 1, 2, 3, 4, 5, 6]);
-    assert.equal(match.config.periods * match.config.periodMinutes, 30);
+    assert.equal(match.config.periods * match.config.periodMinutes, 50);
   }
 });
 
@@ -47,8 +47,8 @@ test('repeated outfield substitutions keep each planned goalkeeper for both peri
   for (const fixture of CUP_MATCHES) {
     let match = create(buildCupSetup(fixture, DEFAULT_ROSTER));
     match = { ...match, status: 'running', lastTickTimestamp: 1000 };
-    for (let minute = 5; minute <= 30; minute += 5) {
-      if (minute === 20) match = { ...match, currentPeriod: 2, periodElapsedMs: 0, lastTickTimestamp: 1000 + 15 * 60000 };
+    for (let minute = 5; minute <= 50; minute += 5) {
+      if (minute === 30) match = { ...match, currentPeriod: 2, periodElapsedMs: 0, lastTickTimestamp: 1000 + 25 * 60000 };
       const now = 1000 + minute * 60000;
       const suggestion = suggestSubstitutions(match, now, 3);
       assert.equal(suggestion.outIds.includes(fixture.goalkeeperId), false);
@@ -119,3 +119,21 @@ test('resting bench players are skipped by suggestSubstitutions', () => {
   assert.equal(suggestion.inIds.length, 2);
 });
 
+
+test('saved cup duration updates without resetting running clock or player statistics', () => {
+  const original = create(INITIAL_CUP_SETUP);
+  const saved = { ...original, config: { ...original.config, periodMinutes: 15 }, status: 'running', currentPeriod: 2, periodElapsedMs: 120000, lastTickTimestamp: 1000,
+    goals: [{ id: 'goal', period: 2, matchTimeMs: 16 * 60000 }],
+    undoStack: [{ ...original, label: 'Byte', currentPeriod: 2 }] };
+  const upgraded = upgradeCupDuration(saved);
+  assert.equal(upgraded.config.periodMinutes, 25);
+  assert.equal(upgraded.periodElapsedMs, saved.periodElapsedMs);
+  assert.equal(upgraded.lastTickTimestamp, saved.lastTickTimestamp);
+  assert.equal(upgraded.goals[0].matchTimeMs, 26 * 60000);
+  assert.deepEqual(computePlayerMetrics(upgraded, 2000).map(p => [p.totalPlayMs, p.benchMs, p.currentStintMs]),
+    computePlayerMetrics(saved, 2000).map(p => [p.totalPlayMs, p.benchMs, p.currentStintMs]));
+  assert.equal(upgraded.undoStack[0].players[0].currentStintStartMatchMs, 10 * 60000);
+  assert.equal(upgradeCupDuration(upgraded), upgraded);
+  assert.equal(upgradeCupDuration({ ...saved, status: 'finished' }).config.periodMinutes, 15);
+  assert.equal(upgradeCupDuration({ ...saved, config: { ...saved.config, eventTitle: 'Annan match' } }).config.periodMinutes, 15);
+});

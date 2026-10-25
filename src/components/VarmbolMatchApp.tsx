@@ -8,7 +8,7 @@ import {
   LayoutGrid,
   ListFilter,
   Maximize2,
-  Minimize2,
+  ArrowLeft,
   Pause,
   Play,
   Plus,
@@ -31,7 +31,7 @@ import {
   PresetEvent,
   QUICK_OPPONENTS,
 } from "@/lib/default-roster";
-import { buildCupSetup, CUP_COACH_NOTES, CUP_MATCHES, INITIAL_CUP_SETUP } from "@/lib/cup-plan";
+import { buildCupSetup, CUP_COACH_NOTES, CUP_MATCHES, INITIAL_CUP_SETUP, upgradeCupDuration } from "@/lib/cup-plan";
 import {
   addOpponentGoal,
   addOurGoal,
@@ -111,7 +111,8 @@ const STORAGE_KEYS = {
 
 type SyncMode = "control" | "follow";
 
-function normalizeMatchState(parsedMatch: MatchState): MatchState {
+function normalizeMatchState(savedMatch: MatchState): MatchState {
+  const parsedMatch = upgradeCupDuration(savedMatch);
   const formation =
     parsedMatch.config.formation ||
     (parsedMatch.config.format === "7v7" ? "1-4-1" : "1-2-1");
@@ -1724,6 +1725,16 @@ export function VarmbolMatchApp() {
           : "min-h-screen flex flex-col pb-36 select-none"
       }
     >
+      {(focusMode || activeTab !== "match") && (
+        <button
+          type="button"
+          onClick={() => { setFocusMode(false); setActiveTab("match"); }}
+          className="min-h-11 px-3 py-2 flex items-center gap-2 shrink-0 bg-[#050e1d] text-[#facc15] border-b border-sky-400/30 font-display font-bold text-sm"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Tillbaka till huvudmenyn
+        </button>
+      )}
       {/* ============================================================
           CHAMPIONSHIP MANAGER TOP TITLE BAR & NAVIGATION
          ============================================================ */}
@@ -2241,15 +2252,7 @@ export function VarmbolMatchApp() {
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={handleToggleFocusMode}
-                      className="px-1.5 py-0.5 rounded bg-[#facc15] text-slate-950 border border-yellow-200 font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-0.5 active:scale-95"
-                      title="Gå tillbaka till full vy"
-                    >
-                      <Minimize2 className="w-3 h-3" />
-                      <span>Full</span>
-                    </button>
+
                   </div>
                 </div>
               </section>
@@ -3416,8 +3419,8 @@ export function VarmbolMatchApp() {
                   <label className="block text-[11px] font-mono-cm font-bold uppercase text-sky-300 mb-1">
                     Minuter / Period
                   </label>
-                  <div className="grid grid-cols-4 gap-1">
-                    {[10, 12, 15, 20].map((mins) => (
+                  <div className="grid grid-cols-5 gap-1">
+                    {[10, 12, 15, 20, 25].map((mins) => (
                       <button
                         key={mins}
                         type="button"

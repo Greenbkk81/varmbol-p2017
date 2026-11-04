@@ -1,69 +1,43 @@
-import { list, put } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import type { MatchState, RosterPlayer, SavedMatchSummary } from "@/lib/types";
+import { verifyRequestAuth } from "@/lib/auth";
+import {
+  getTeamRegistry,
+  hasBlobToken,
+  readTeamSnapshot,
+  toPublicTeamProfile,
+  VFC_P2017_TEAM_ID,
+  writeTeamSnapshot,
+} from "@/lib/teams";
+import type { LiveSyncSnapshot } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const BLOB_PATH = "varmbol-p2017/live-state-v1.json";
+export type { LiveSyncSnapshot };
 
-export interface LiveSyncSnapshot {
-  version: number;
-  updatedAt: number;
-  controllerId: string;
-  controllerLabel?: string;
-  roster: RosterPlayer[];
-  matchState: MatchState;
-  savedMatches: SavedMatchSummary[];
-}
-
-declare global {
-  var __varmbolLiveSyncMemory: LiveSyncSnapshot | null | undefined;
-}
-
-function hasBlobToken() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
-}
-
-async function readSnapshot(): Promise<LiveSyncSnapshot | null> {
-  if (!hasBlobToken()) {
-    return globalThis.__varmbolLiveSyncMemory ?? null;
+export async function GET(request: Request) {
+  const session = verifyRequestAuth(request);
+  if (!session) {
+    return NextResponse.json(
+      { ok: false, error: "Ej inloggad" },
+      { status: 401, headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
   }
-  try {
-    const { blobs } = await list({ prefix: BLOB_PATH, limit: 5 });
-    const exact =
-      blobs.find((item) => item.pathname === BLOB_PATH) ?? blobs[0];
-    if (!exact) return null;
-    const res = await fetch(`${exact.url}?t=${Date.now()}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as LiveSyncSnapshot;
-  } catch {
-    return globalThis.__varmbolLiveSyncMemory ?? null;
-  }
-}
 
-async function writeSnapshot(snapshot: LiveSyncSnapshot): Promise<"blob" | "memory"> {
-  globalThis.__varmbolLiveSyncMemory = snapshot;
-  if (!hasBlobToken()) {
-    return "memory";
-  }
-  await put(BLOB_PATH, JSON.stringify(snapshot), {
-    access: "public",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    cacheControlMaxAge: 0,
-    contentType: "application/json",
-  });
-  return "blob";
-}
+  const url = new URL(request.url);
+  const requestedTeamId = url.searchParams.get("teamId");
+  const targetTeamId =
+    session.role === "superadmin"
+      ? requestedTeamId || VFC_P2017_TEAM_ID
+      : session.teamId;
 
-export async function GET() {
-  const snapshot = await readSnapshot();
+  const registry = await getTeamRegistry();
+  const snapshot = await readTeamSnapshot(targetTeamId, registry);
+
   return NextResponse.json(
     {
       ok: true,
       storage: hasBlobToken() ? "blob" : "memory",
+      teamId: targetTeamId,
       snapshot,
     },
     {
@@ -75,9 +49,28 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const session = verifyRequestAuth(request);
+  if (!session) {
+    return NextResponse.json(
+      { ok: false, error: "Ej inloggad" },
+      { status: 401, headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
+  }
+
+  if (session.role === "follower") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Följ-läge är skrivskyddat. Logga in med tränarkod för att styra.",
+      },
+      { status: 403, headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
+  }
+
   try {
     const body = (await request.json()) as Partial<LiveSyncSnapshot> & {
       force?: boolean;
+      teamId?: string;
     };
     if (!body?.matchState || !Array.isArray(body.roster)) {
       return NextResponse.json(
@@ -86,10 +79,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const current = await readSnapshot();
+    const url = new URL(request.url);
+    const requestedTeamId = body.teamId || url.searchParams.get("teamId");
+    const targetTeamId =
+      session.role === "superadmin"
+        ? requestedTeamId || VFC_P2017_TEAM_ID
+        : session.teamId;
+
+    const registry = await getTeamRegistry();
+    const teamEntry = registry.teams.find((t) => t.id === targetTeamId);
+    if (!teamEntry || !teamEntry.active) {
+      return NextResponse.json(
+        { ok: false, error: "Laget hittades inte" },
+        { status: 404 }
+      );
+    }
+
+    const current = await readTeamSnapshot(targetTeamId, registry);
     const isDifferentDevice =
       current &&
       current.controllerId &&
+      current.controllerId !== "seed" &&
       body.controllerId &&
       current.controllerId !== body.controllerId;
 
@@ -149,6 +159,8 @@ export async function POST(request: Request) {
     const snapshot: LiveSyncSnapshot = {
       version,
       updatedAt: Date.now(),
+      teamId: targetTeamId,
+      teamProfile: toPublicTeamProfile(teamEntry),
       controllerId: body.controllerId || "unknown",
       controllerLabel: body.controllerLabel,
       roster: body.roster,
@@ -156,11 +168,12 @@ export async function POST(request: Request) {
       savedMatches: mergedSavedMatches,
     };
 
-    const storage = await writeSnapshot(snapshot);
+    const storage = await writeTeamSnapshot(targetTeamId, snapshot, registry);
     return NextResponse.json(
       {
         ok: true,
         storage,
+        teamId: targetTeamId,
         version: snapshot.version,
         updatedAt: snapshot.updatedAt,
       },

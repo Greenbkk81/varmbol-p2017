@@ -55,8 +55,13 @@ body {
 }
 
 .cm-header-bar {
-  background: linear-gradient(90deg, #003b7a 0%, #005cb9 50%, #00356e 100%);
-  border-bottom: 2px solid #facc15;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--cm-varmbol-blue) 68%, #020617) 0%,
+    var(--cm-varmbol-blue) 50%,
+    color-mix(in srgb, var(--cm-varmbol-blue) 62%, #020617) 100%
+  );
+  border-bottom: 2px solid var(--cm-gold);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 

@@ -25,10 +25,14 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "VÄRMBOLS FC P2017 · CM Tactical Match Engine",
+  title: "SIDLINJEN · CM Tactical Match Engine",
   description:
-    "Championship Manager-inspirerad speltids- och taktikapp (1-4-1) för Värmbols FC Pojkar 2017.",
+    "Championship Manager-inspirerad speltids- och taktikapp för ungdomsfotboll.",
   manifest: "/manifest.json",
+  robots: {
+    index: false,
+    follow: false,
+  },
   icons: {
     icon: "/club/varmbol-logo.png",
     apple: "/club/varmbol-logo.png",

@@ -23,3 +23,8 @@ Webbapp för tränarna i **Värmbols FC Pojkar 2017** (Lars, Jocke och Sofia) f�
 npm install
 npm run dev -- --port 43210
 ```
+
+
+## Handover & Multi-lag-dokumentation
+
+Se [`HANDOVER.md`](./HANDOVER.md) för aktuell projektstatus, multi-lag-arkitektur, koder, WhatsApp-"Magic Links" (`?join=KOD`) och miljövariabler i Vercel.

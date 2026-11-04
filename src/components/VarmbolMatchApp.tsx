@@ -5,16 +5,20 @@ import {
   ArrowLeftRight,
   Check,
   Clock,
+  KeyRound,
   LayoutGrid,
   ListFilter,
   Maximize2,
   ArrowLeft,
+  MessageCircle,
+  Minimize2,
   Pause,
   Play,
   Plus,
   RotateCcw,
   Shield,
   Sparkles,
+  Trash2,
   Trophy,
   BookOpen,
   Undo2,
@@ -60,15 +64,61 @@ import { playSound, resumeSound, SoundCue } from "@/lib/sounds";
 import { GuideView } from "./GuideView";
 import { PositionTime } from "./PositionTime";
 import {
+  AuthRole,
   ComputedPlayerMetrics,
   GoalRecord,
+  LiveSyncSnapshot,
   MatchConfig,
   MatchState,
   RosterPlayer,
   SavedMatchSummary,
   TacticalFormation,
+  TeamProfile,
 } from "@/lib/types";
 import { PlayerAvatar } from "./PlayerAvatar";
+
+const DEFAULT_TEAM_PROFILE: TeamProfile = {
+  id: "vfc-p2017",
+  clubName: "Värmbols FC",
+  teamName: "P2017",
+  displayName: "Värmbols FC P2017",
+  shortName: "VFC",
+  arenaName: "Värmbols IP · Katrineholm",
+  coaches: ["Lars", "Jocke", "Sofia"],
+  logoUrl: "/club/varmbol-logo-white.png",
+  colors: {
+    primary: "#005cb9",
+    secondary: "#facc15",
+  },
+  defaultFormat: "7v7",
+  defaultFormation: "1-4-1",
+  isDefaultVfcTeam: true,
+  createdAt: 1729843200000,
+  updatedAt: 1729843200000,
+};
+
+function getStorageKeys(teamId: string) {
+  if (!teamId || teamId === "vfc-p2017") {
+    return {
+      roster: "varmbol_p2017_roster_v3",
+      activeMatch: "varmbol_p2017_active_match_v3",
+      history: "varmbol_p2017_history_v2",
+      sound: "varmbol_p2017_sound_v1",
+      syncMode: "varmbol_p2017_sync_mode_v1",
+      deviceId: "varmbol_p2017_device_id_v1",
+      focusMode: "varmbol_p2017_focus_mode_v1",
+    };
+  }
+  return {
+    roster: `team_${teamId}_roster_v1`,
+    activeMatch: `team_${teamId}_active_match_v1`,
+    history: `team_${teamId}_history_v1`,
+    sound: "varmbol_p2017_sound_v1",
+    syncMode: `team_${teamId}_sync_mode_v1`,
+    deviceId: "varmbol_p2017_device_id_v1",
+    focusMode: "varmbol_p2017_focus_mode_v1",
+  };
+}
 
 function buildMatchSummary(state: MatchState, ts: number): SavedMatchSummary {
   const metrics = computePlayerMetrics(state, ts);
@@ -347,11 +397,96 @@ function CoachTicker({ text }: { text: string }) {
   );
 }
 
-export function VarmbolMatchApp() {
+export interface VarmbolMatchAppProps {
+  teamProfile?: TeamProfile;
+  authRole?: AuthRole;
+  authToken?: string | null;
+  initialRemoteSnapshot?: LiveSyncSnapshot | null;
+  onOpenAdminModal?: () => void;
+}
+
+export function VarmbolMatchApp({
+  teamProfile = DEFAULT_TEAM_PROFILE,
+  authRole = "coach",
+  authToken = null,
+  initialRemoteSnapshot = null,
+  onOpenAdminModal,
+}: VarmbolMatchAppProps = {}) {
+  const isVfcDefault =
+    teamProfile.id === "vfc-p2017" || Boolean(teamProfile.isDefaultVfcTeam);
+  const storageKeys = useMemo(
+    () => getStorageKeys(teamProfile.id),
+    [teamProfile.id]
+  );
+  const isReadOnlyFollower = authRole === "follower";
+
+  const initialRoster = useMemo(() => {
+    if (
+      initialRemoteSnapshot?.roster &&
+      Array.isArray(initialRemoteSnapshot.roster) &&
+      (initialRemoteSnapshot.roster.length > 0 || !isVfcDefault)
+    ) {
+      return initialRemoteSnapshot.roster;
+    }
+    return isVfcDefault ? INITIAL_CUP_SETUP.roster : [];
+  }, [initialRemoteSnapshot, isVfcDefault]);
+
+  const initialConfig = useMemo<MatchConfig>(() => {
+    if (initialRemoteSnapshot?.matchState?.config) {
+      return initialRemoteSnapshot.matchState.config;
+    }
+    if (isVfcDefault) {
+      return INITIAL_CUP_SETUP.config;
+    }
+    const fmt = teamProfile.defaultFormat || "7v7";
+    const form =
+      teamProfile.defaultFormation || (fmt === "7v7" ? "1-4-1" : "1-2-1");
+    return {
+      format: fmt,
+      formation: form,
+      periods: 3,
+      periodMinutes: 15,
+      opponent: "Motståndare",
+      location: "Hemma",
+      eventTitle: `${teamProfile.displayName} · Match`,
+      countGoalkeeperInFairness: false,
+      stintMinutes: 5,
+    };
+  }, [initialRemoteSnapshot, isVfcDefault, teamProfile]);
+
+  const initialCap = getPitchCapacity(initialConfig.format);
+  const initialPitchIds = useMemo(() => {
+    if (initialRemoteSnapshot?.matchState?.players?.length) {
+      return initialRemoteSnapshot.matchState.players
+        .filter((p) => p.onPitch)
+        .sort((a, b) => (a.pitchSlotIndex ?? 0) - (b.pitchSlotIndex ?? 0))
+        .map((p) => p.id);
+    }
+    if (isVfcDefault) {
+      return [...INITIAL_CUP_SETUP.pitchIds];
+    }
+    return initialRoster.slice(0, initialCap).map((p) => p.id);
+  }, [initialRemoteSnapshot, isVfcDefault, initialRoster, initialCap]);
+
+  const initialGkId = useMemo(() => {
+    if (initialRemoteSnapshot?.matchState?.players?.length) {
+      return (
+        initialRemoteSnapshot.matchState.players.find((p) => p.isGoalkeeper)
+          ?.id ??
+        initialPitchIds[0] ??
+        ""
+      );
+    }
+    if (isVfcDefault) {
+      return INITIAL_CUP_SETUP.goalkeeperId;
+    }
+    return initialPitchIds[0] ?? "";
+  }, [initialRemoteSnapshot, isVfcDefault, initialPitchIds]);
+
   const [hydrated, setHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "match" | "setup" | "stats" | "guide"
-  >("match");
+  >(() => (initialRoster.length === 0 ? "setup" : "match"));
   // I matchvyn kan man se 2D Taktikplan ("pitch") eller Klassisk CM Tabell ("table")
   const [pitchViewMode, setPitchViewMode] = useState<"pitch" | "table">(
     "pitch"
@@ -360,28 +495,33 @@ export function VarmbolMatchApp() {
     "play"
   );
 
-  // Cuptruppen enligt tränarnas matchplan.
-  const [roster, setRoster] = useState<RosterPlayer[]>(INITIAL_CUP_SETUP.roster);
+  // Spelartrupp
+  const [roster, setRoster] = useState<RosterPlayer[]>(initialRoster);
 
-  // Matchinställningar inför ny match (med 1-4-1 som förval!)
-  const [draftConfig, setDraftConfig] = useState<MatchConfig>(INITIAL_CUP_SETUP.config);
+  // Matchinställningar inför ny match
+  const [draftConfig, setDraftConfig] = useState<MatchConfig>(initialConfig);
 
-  const [setupPitchIds, setSetupPitchIds] = useState<string[]>(() =>
-    [...INITIAL_CUP_SETUP.pitchIds]
-  );
-  const [setupGkId, setSetupGkId] = useState<string>(INITIAL_CUP_SETUP.goalkeeperId);
+  const [setupPitchIds, setSetupPitchIds] = useState<string[]>(initialPitchIds);
+  const [setupGkId, setSetupGkId] = useState<string>(initialGkId);
 
   // Aktiv match
   const [matchState, setMatchState] = useState<MatchState>(() =>
-    createInitialMatchState(
-      INITIAL_CUP_SETUP.roster,
-      INITIAL_CUP_SETUP.config,
-      INITIAL_CUP_SETUP.pitchIds,
-      INITIAL_CUP_SETUP.goalkeeperId
-    )
+    initialRemoteSnapshot?.matchState &&
+    initialRemoteSnapshot.matchState.players?.length > 0
+      ? normalizeMatchState(initialRemoteSnapshot.matchState)
+      : createInitialMatchState(
+          initialRoster,
+          initialConfig,
+          initialPitchIds,
+          initialGkId
+        )
   );
 
-  const [savedMatches, setSavedMatches] = useState<SavedMatchSummary[]>([]);
+  const [savedMatches, setSavedMatches] = useState<SavedMatchSummary[]>(() =>
+    initialRemoteSnapshot?.savedMatches
+      ? normalizeHistory(initialRemoteSnapshot.savedMatches)
+      : []
+  );
   const [now, setNow] = useState<number>(() => Date.now());
 
   // Multi-byte valda spelare (1, 2, 3 eller 4 samtidigt)
@@ -401,14 +541,22 @@ export function VarmbolMatchApp() {
   const [copiedSummary, setCopiedSummary] = useState(false);
 
   const [newPlayerName, setNewPlayerName] = useState("");
+  const [bulkPlayersText, setBulkPlayersText] = useState("");
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
   const [wakeLockActive, setWakeLockActive] = useState(false);
-  const [syncMode, setSyncMode] = useState<SyncMode>("control");
-  const [syncUpdatedAt, setSyncUpdatedAt] = useState<number | null>(null);
+  const [syncMode, setSyncMode] = useState<SyncMode>(() =>
+    isReadOnlyFollower ? "follow" : "control"
+  );
+  const [syncUpdatedAt, setSyncUpdatedAt] = useState<number | null>(
+    initialRemoteSnapshot?.updatedAt ?? null
+  );
   const [syncError, setSyncError] = useState(false);
   const deviceIdRef = useRef<string>("device");
-  const lastRemoteVersionRef = useRef<number>(0);
+  const lastRemoteVersionRef = useRef<number>(
+    initialRemoteSnapshot?.version ?? 0
+  );
   const skipNextPushRef = useRef<boolean>(false);
   const forceNextPushRef = useRef<boolean>(false);
   const periodAlertedRef = useRef<number | null>(null);
@@ -417,7 +565,7 @@ export function VarmbolMatchApp() {
   // Ladda från localStorage
   useEffect(() => {
     try {
-      const existingDeviceId = localStorage.getItem(STORAGE_KEYS.deviceId);
+      const existingDeviceId = localStorage.getItem(storageKeys.deviceId);
       if (existingDeviceId) {
         deviceIdRef.current = existingDeviceId;
       } else {
@@ -425,20 +573,24 @@ export function VarmbolMatchApp() {
           .toString(36)
           .slice(2, 6)}`;
         deviceIdRef.current = created;
-        localStorage.setItem(STORAGE_KEYS.deviceId, created);
+        localStorage.setItem(storageKeys.deviceId, created);
       }
 
-      const rawSyncMode = localStorage.getItem(STORAGE_KEYS.syncMode);
-      const urlMode = new URLSearchParams(window.location.search).get("mode");
-      if (urlMode === "follow" || urlMode === "live") {
+      if (isReadOnlyFollower) {
         setSyncMode("follow");
-      } else if (urlMode === "control" || urlMode === "styr") {
-        setSyncMode("control");
-      } else if (rawSyncMode === "follow" || rawSyncMode === "control") {
-        setSyncMode(rawSyncMode);
+      } else {
+        const rawSyncMode = localStorage.getItem(storageKeys.syncMode);
+        const urlMode = new URLSearchParams(window.location.search).get("mode");
+        if (urlMode === "follow" || urlMode === "live") {
+          setSyncMode("follow");
+        } else if (urlMode === "control" || urlMode === "styr") {
+          setSyncMode("control");
+        } else if (rawSyncMode === "follow" || rawSyncMode === "control") {
+          setSyncMode(rawSyncMode);
+        }
       }
 
-      const rawRoster = localStorage.getItem(STORAGE_KEYS.roster);
+      const rawRoster = localStorage.getItem(storageKeys.roster);
       if (rawRoster) {
         const parsed = JSON.parse(rawRoster) as RosterPlayer[];
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -448,34 +600,45 @@ export function VarmbolMatchApp() {
               name: correctFirstName(player.name),
             }))
           );
+          if (activeTab === "setup" && initialRoster.length === 0) {
+            setActiveTab("match");
+          }
         }
       }
 
-      const rawMatch = localStorage.getItem(STORAGE_KEYS.activeMatch);
+      const rawMatch = localStorage.getItem(storageKeys.activeMatch);
       if (rawMatch) {
         const parsedMatch = JSON.parse(rawMatch) as MatchState;
         if (parsedMatch && parsedMatch.players?.length > 0) {
           const normalized = normalizeMatchState(parsedMatch);
           setMatchState(normalized);
           setDraftConfig(normalized.config);
-          setSetupPitchIds(normalized.players.filter((p) => p.onPitch).sort((a, b) => (a.pitchSlotIndex ?? 0) - (b.pitchSlotIndex ?? 0)).map((p) => p.id));
-          setSetupGkId(normalized.players.find((p) => p.isGoalkeeper)?.id ?? INITIAL_CUP_SETUP.goalkeeperId);
+          setSetupPitchIds(
+            normalized.players
+              .filter((p) => p.onPitch)
+              .sort((a, b) => (a.pitchSlotIndex ?? 0) - (b.pitchSlotIndex ?? 0))
+              .map((p) => p.id)
+          );
+          setSetupGkId(
+            normalized.players.find((p) => p.isGoalkeeper)?.id ??
+              initialGkId
+          );
         }
       }
 
-      const rawSound = localStorage.getItem(STORAGE_KEYS.sound);
+      const rawSound = localStorage.getItem(storageKeys.sound);
       if (rawSound === "0") setSoundEnabled(false);
 
-      const rawFocus = localStorage.getItem(STORAGE_KEYS.focusMode);
+      const rawFocus = localStorage.getItem(storageKeys.focusMode);
       const urlFocus = new URLSearchParams(window.location.search).get("focus");
       if (urlFocus === "1" || urlFocus === "true" || rawFocus === "1") {
         setFocusMode(true);
       }
 
-      const rawHistory = localStorage.getItem(STORAGE_KEYS.history);
+      const rawHistory = localStorage.getItem(storageKeys.history);
       if (rawHistory) {
         const parsedHistory = JSON.parse(rawHistory) as SavedMatchSummary[];
-        if (Array.isArray(parsedHistory)) {
+        if (Array.isArray(parsedHistory) && parsedHistory.length > 0) {
           setSavedMatches(normalizeHistory(parsedHistory));
         }
       }
@@ -483,64 +646,65 @@ export function VarmbolMatchApp() {
       // ignore
     }
     setHydrated(true);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKeys]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEYS.roster, JSON.stringify(roster));
+      localStorage.setItem(storageKeys.roster, JSON.stringify(roster));
     } catch {
       // ignore
     }
-  }, [roster, hydrated]);
+  }, [roster, hydrated, storageKeys]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
       localStorage.setItem(
-        STORAGE_KEYS.activeMatch,
+        storageKeys.activeMatch,
         JSON.stringify(matchState)
       );
     } catch {
       // ignore
     }
-  }, [matchState, hydrated]);
+  }, [matchState, hydrated, storageKeys]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(savedMatches));
+      localStorage.setItem(storageKeys.history, JSON.stringify(savedMatches));
     } catch {
       // ignore
     }
-  }, [savedMatches, hydrated]);
+  }, [savedMatches, hydrated, storageKeys]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEYS.sound, soundEnabled ? "1" : "0");
+      localStorage.setItem(storageKeys.sound, soundEnabled ? "1" : "0");
     } catch {
       // ignore
     }
-  }, [soundEnabled, hydrated]);
+  }, [soundEnabled, hydrated, storageKeys]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEYS.focusMode, focusMode ? "1" : "0");
+      localStorage.setItem(storageKeys.focusMode, focusMode ? "1" : "0");
     } catch {
       // ignore
     }
-  }, [focusMode, hydrated]);
+  }, [focusMode, hydrated, storageKeys]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEYS.syncMode, syncMode);
+      localStorage.setItem(storageKeys.syncMode, syncMode);
     } catch {
       // ignore
     }
-  }, [syncMode, hydrated]);
+  }, [syncMode, hydrated, storageKeys]);
 
   const applyRemoteSnapshot = React.useCallback(
     (snapshot: {
@@ -550,7 +714,7 @@ export function VarmbolMatchApp() {
       matchState?: MatchState;
       savedMatches?: SavedMatchSummary[];
     }) => {
-      if (!snapshot?.matchState?.players?.length) return;
+      if (!snapshot?.matchState) return;
       if (
         typeof snapshot.version === "number" &&
         snapshot.version <= lastRemoteVersionRef.current
@@ -580,9 +744,11 @@ export function VarmbolMatchApp() {
                 snapshot.matchState.lastTickTimestamp + clockSkewMs,
             }
           : snapshot.matchState;
-      const normalized = normalizeMatchState(adjustedMatchState);
-      setMatchState(normalized);
-      setDraftConfig(normalized.config);
+      if (adjustedMatchState.players?.length > 0) {
+        const normalized = normalizeMatchState(adjustedMatchState);
+        setMatchState(normalized);
+        setDraftConfig(normalized.config);
+      }
       if (Array.isArray(snapshot.roster) && snapshot.roster.length > 0) {
         setRoster(
           snapshot.roster.map((player) => ({
@@ -606,9 +772,19 @@ export function VarmbolMatchApp() {
     async (force = false) => {
       try {
         if (force) lastRemoteVersionRef.current = 0;
-        const res = await fetch(`/api/sync?t=${Date.now()}`, {
-          cache: "no-store",
-        });
+        const headers: Record<string, string> = {};
+        if (authToken) {
+          headers["Authorization"] = `Bearer ${authToken}`;
+        }
+        const res = await fetch(
+          `/api/sync?teamId=${encodeURIComponent(
+            teamProfile.id
+          )}&t=${Date.now()}`,
+          {
+            cache: "no-store",
+            headers,
+          }
+        );
         if (!res.ok) {
           setSyncError(true);
           return;
@@ -622,12 +798,12 @@ export function VarmbolMatchApp() {
         setSyncError(true);
       }
     },
-    [applyRemoteSnapshot]
+    [applyRemoteSnapshot, authToken, teamProfile.id]
   );
 
   // Styrande telefon skickar upp till Vercel Blob vid varje ändring
   useEffect(() => {
-    if (!hydrated || syncMode !== "control") return;
+    if (!hydrated || syncMode !== "control" || isReadOnlyFollower) return;
     if (skipNextPushRef.current) {
       skipNextPushRef.current = false;
       return;
@@ -636,10 +812,17 @@ export function VarmbolMatchApp() {
     forceNextPushRef.current = false;
     const timer = setTimeout(async () => {
       try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (authToken) {
+          headers["Authorization"] = `Bearer ${authToken}`;
+        }
         const res = await fetch("/api/sync", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
+            teamId: teamProfile.id,
             controllerId: deviceIdRef.current,
             force: shouldForce,
             roster,
@@ -668,7 +851,17 @@ export function VarmbolMatchApp() {
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [hydrated, syncMode, roster, matchState, savedMatches, applyRemoteSnapshot]);
+  }, [
+    hydrated,
+    syncMode,
+    isReadOnlyFollower,
+    authToken,
+    teamProfile.id,
+    roster,
+    matchState,
+    savedMatches,
+    applyRemoteSnapshot,
+  ]);
 
   // Följande telefon hämtar live varannan sekund
   useEffect(() => {
@@ -855,7 +1048,7 @@ export function VarmbolMatchApp() {
       } ]`;
     }
     if (matchState.status === "paused" && periodElapsedMs === 0) {
-      return `VÄRMBOLS FC P2017 STÄLLER UPP I ${currentFormation} MOT ${matchState.config.opponent.toUpperCase()} — REDO FÖR AVSPARK!`;
+      return `${teamProfile.displayName.toUpperCase()} STÄLLER UPP I ${currentFormation} MOT ${matchState.config.opponent.toUpperCase()} — REDO FÖR AVSPARK!`;
     }
     const stintLimitMs = resolveStintMinutes(matchState.config) * 60 * 1000;
     const tiredOutfield = pitchMetrics
@@ -895,11 +1088,13 @@ export function VarmbolMatchApp() {
     currentFormation,
     pitchMetrics,
     benchMetrics,
+    teamProfile.displayName,
   ]);
 
-  const isFollowing = syncMode === "follow";
+  const isFollowing = syncMode === "follow" || isReadOnlyFollower;
 
   function handleSetSyncMode(nextMode: SyncMode) {
+    if (isReadOnlyFollower) return;
     if (nextMode === "control") {
       forceNextPushRef.current = true;
     }
@@ -1422,15 +1617,65 @@ export function VarmbolMatchApp() {
     if (isFollowing) return;
     const trimmed = newPlayerName.trim();
     if (!trimmed) return;
-    const firstNameOnly = trimmed.split(/\s+/)[0];
-    const newPlayer: RosterPlayer = {
-      id: `p-${Date.now()}`,
-      name: firstNameOnly,
-      number: String(roster.length + 1),
-      activeInSquad: true,
-    };
-    setRoster((prev) => [...prev, newPlayer]);
+    const parts = trimmed
+      .split(/[,\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length === 0) return;
+
+    setRoster((prev) => {
+      const added: RosterPlayer[] = parts.map((rawName, idx) => ({
+        id: `p-${Date.now()}-${idx}`,
+        name: rawName,
+        number: String(prev.length + idx + 1),
+        activeInSquad: true,
+      }));
+      const next = [...prev, ...added];
+      if (prev.length < pitchCapacity) {
+        const nextStarters = next
+          .filter((p) => p.activeInSquad)
+          .slice(0, pitchCapacity)
+          .map((p) => p.id);
+        setSetupPitchIds(nextStarters);
+        if (!setupGkId && nextStarters[0]) {
+          setSetupGkId(nextStarters[0]);
+        }
+      }
+      return next;
+    });
     setNewPlayerName("");
+  }
+
+  function handleBulkImportPlayers(replaceExisting: boolean) {
+    if (isFollowing) return;
+    const names = bulkPlayersText
+      .split(/[,\n;]+/)
+      .map((s) => s.replace(/^\d+[\.\)\-\s]+/, "").trim())
+      .filter(Boolean);
+    if (names.length === 0) return;
+
+    setRoster((prev) => {
+      const base = replaceExisting ? [] : prev;
+      const created: RosterPlayer[] = names.map((name, idx) => ({
+        id: `p-${Date.now()}-${idx}`,
+        name,
+        number: String(base.length + idx + 1),
+        activeInSquad: true,
+      }));
+      const next = [...base, ...created];
+      const starters = next.slice(0, pitchCapacity).map((p) => p.id);
+      setSetupPitchIds(starters);
+      setSetupGkId(starters[0] || "");
+      return next;
+    });
+    setBulkPlayersText("");
+    setShowBulkImport(false);
+  }
+
+  function handleRemovePlayerFromRoster(playerId: string) {
+    if (isFollowing) return;
+    setRoster((prev) => prev.filter((p) => p.id !== playerId));
+    setSetupPitchIds((prev) => prev.filter((id) => id !== playerId));
   }
 
   function handleStartNewMatchFromSetup() {
@@ -1592,9 +1837,9 @@ export function VarmbolMatchApp() {
     setActiveTab("match");
   }
 
-  function handleCopyCupSummary() {
+  function buildCupSummaryText(): string {
     const lines: string[] = [];
-    lines.push("⚽ VÄRMBOLS FC P2017 – SAMMANFATTNING");
+    lines.push(`⚽ ${teamProfile.displayName.toUpperCase()} – SAMMANFATTNING`);
     const allMatches =
       getTotalMatchElapsedMs(matchState, now) > 5_000
         ? [
@@ -1608,9 +1853,9 @@ export function VarmbolMatchApp() {
       for (const m of allMatches) {
         const gLine = goalHeadline(m.goals);
         lines.push(
-          `• Värmbols FC ${m.ourScore}–${m.opponentScore} ${m.opponent}${
-            gLine ? ` (${gLine})` : ""
-          }`
+          `• ${teamProfile.clubName} ${m.ourScore}–${m.opponentScore} ${
+            m.opponent
+          }${gLine ? ` (${gLine})` : ""}`
         );
       }
     }
@@ -1634,12 +1879,23 @@ export function VarmbolMatchApp() {
         );
       }
     }
+    return lines.join("\n");
+  }
+
+  function handleCopyCupSummary() {
+    const text = buildCupSummaryText();
     if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      navigator.clipboard.writeText(text).then(() => {
         setCopiedSummary(true);
         setTimeout(() => setCopiedSummary(false), 2500);
       });
     }
+  }
+
+  function handleShareSummaryWhatsApp() {
+    const text = buildCupSummaryText();
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, "_blank", "noopener,noreferrer");
   }
 
   const selectedMismatch = selectedOutIds.length !== selectedInIds.length;
@@ -1717,8 +1973,17 @@ export function VarmbolMatchApp() {
     });
   }
 
+  const coachList =
+    teamProfile.coaches?.length > 0 ? teamProfile.coaches : ["Tränare"];
+
   return (
     <div
+      style={
+        {
+          "--cm-varmbol-blue": teamProfile.colors.primary,
+          "--cm-gold": teamProfile.colors.secondary,
+        } as React.CSSProperties
+      }
       className={
         focusMode && activeTab === "match"
           ? "h-[100dvh] overflow-hidden flex flex-col bg-[#030914] select-none"
@@ -1742,22 +2007,28 @@ export function VarmbolMatchApp() {
       <header className="sticky top-0 z-30 bg-[#050e1d]/95 backdrop-blur-md border-b-2 border-[#facc15]/80 shadow-[0_6px_30px_rgba(0,0,0,0.85)]">
         <div className="cm-header-bar px-3 py-2">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
-            {/* Värmbols FC Vapen & Titel */}
+            {/* Klubbvapen & Titel */}
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded bg-white/10 p-1 flex items-center justify-center border border-[#facc15]/70 shadow-inner shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/club/varmbol-logo-white.png"
-                  alt="Värmbols FC"
-                  className="w-full h-full object-contain"
-                />
+                {teamProfile.logoUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={teamProfile.logoUrl}
+                    alt={teamProfile.clubName}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="font-display font-extrabold text-xs sm:text-sm uppercase text-[#facc15] tracking-tighter">
+                    {teamProfile.shortName}
+                  </span>
+                )}
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-display font-extrabold text-base sm:text-xl tracking-wider uppercase text-white drop-shadow">
-                    VÄRMBOLS FC · P2017
+                  <span className="font-display font-extrabold text-base sm:text-xl tracking-wider uppercase text-white drop-shadow truncate">
+                    {teamProfile.clubName} · {teamProfile.teamName}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[10px] uppercase tracking-wider">
+                  <span className="px-1.5 py-0.5 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[10px] uppercase tracking-wider shrink-0">
                     {currentFormation}
                   </span>
                 </div>
@@ -1771,81 +2042,115 @@ export function VarmbolMatchApp() {
               </div>
             </div>
 
-            {/* Tränarna Lars, Jocke och Sofia + Live-synk */}
+            {/* Tränare + Live-synk + Admin/Lag */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <div
-                className="flex items-center bg-[#040d1a]/90 border border-sky-300/30 rounded p-0.5 font-mono-cm text-[10px] font-extrabold uppercase"
-                title={
-                  syncUpdatedAt
-                    ? `Senast synkad ${new Date(
-                        syncUpdatedAt
-                      ).toLocaleTimeString("sv-SE")}`
-                    : "Välj Styr på den telefon som trycker, Följ live på de andra"
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() => handleSetSyncMode("control")}
-                  className={`px-1.5 sm:px-2 py-1 rounded flex items-center gap-1 transition ${
-                    syncMode === "control"
-                      ? "bg-[#facc15] text-slate-950"
-                      : "text-sky-200 hover:text-white"
-                  }`}
+              {isReadOnlyFollower ? (
+                <div className="px-2 py-1 rounded bg-emerald-400/20 border border-emerald-400/50 font-mono-cm text-[10px] font-extrabold uppercase text-emerald-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Följ live</span>
+                </div>
+              ) : (
+                <div
+                  className="flex items-center bg-[#040d1a]/90 border border-sky-300/30 rounded p-0.5 font-mono-cm text-[10px] font-extrabold uppercase"
+                  title={
+                    syncUpdatedAt
+                      ? `Senast synkad ${new Date(
+                          syncUpdatedAt
+                        ).toLocaleTimeString("sv-SE")}`
+                      : "Välj Styr på den telefon som trycker, Följ live på de andra"
+                  }
                 >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      syncError
-                        ? "bg-rose-500"
-                        : syncMode === "control"
-                        ? "bg-slate-950"
-                        : "bg-slate-500"
+                  <button
+                    type="button"
+                    onClick={() => handleSetSyncMode("control")}
+                    className={`px-1.5 sm:px-2 py-1 rounded flex items-center gap-1 transition ${
+                      syncMode === "control"
+                        ? "bg-[#facc15] text-slate-950"
+                        : "text-sky-200 hover:text-white"
                     }`}
-                  />
-                  <span>Styr</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSetSyncMode("follow")}
-                  className={`px-1.5 sm:px-2 py-1 rounded flex items-center gap-1 transition ${
-                    syncMode === "follow"
-                      ? "bg-emerald-400 text-slate-950"
-                      : "text-sky-200 hover:text-white"
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      syncError
-                        ? "bg-rose-500"
-                        : syncMode === "follow"
-                        ? "bg-slate-950 animate-pulse"
-                        : "bg-slate-500"
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        syncError
+                          ? "bg-rose-500"
+                          : syncMode === "control"
+                          ? "bg-slate-950"
+                          : "bg-slate-500"
+                      }`}
+                    />
+                    <span>Styr</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetSyncMode("follow")}
+                    className={`px-1.5 sm:px-2 py-1 rounded flex items-center gap-1 transition ${
+                      syncMode === "follow"
+                        ? "bg-emerald-400 text-slate-950"
+                        : "text-sky-200 hover:text-white"
                     }`}
-                  />
-                  <span>Följ</span>
-                </button>
-              </div>
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        syncError
+                          ? "bg-rose-500"
+                          : syncMode === "follow"
+                          ? "bg-slate-950 animate-pulse"
+                          : "bg-slate-500"
+                      }`}
+                    />
+                    <span>Följ</span>
+                  </button>
+                </div>
+              )}
 
               <div className="hidden sm:flex items-center gap-2 bg-[#040d1a]/90 border border-sky-300/30 rounded px-2.5 py-1">
                 <div className="flex -space-x-1">
-                  <span className="w-5 h-5 rounded-full bg-[#005cb9] border border-white/80 font-mono-cm font-extrabold text-[9px] text-white flex items-center justify-center shadow">
-                    L
-                  </span>
-                  <span className="w-5 h-5 rounded-full bg-[#facc15] border border-slate-950 font-mono-cm font-extrabold text-[9px] text-slate-950 flex items-center justify-center shadow">
-                    J
-                  </span>
-                  <span className="w-5 h-5 rounded-full bg-emerald-400 border border-slate-950 font-mono-cm font-extrabold text-[9px] text-slate-950 flex items-center justify-center shadow">
-                    S
-                  </span>
+                  {coachList.slice(0, 4).map((coach, idx) => {
+                    const badgeClasses = [
+                      "bg-[#005cb9] text-white border-white/80",
+                      "bg-[#facc15] text-slate-950 border-slate-950",
+                      "bg-emerald-400 text-slate-950 border-slate-950",
+                      "bg-sky-400 text-slate-950 border-slate-950",
+                    ][idx % 4];
+                    return (
+                      <span
+                        key={`${coach}-${idx}`}
+                        className={`w-5 h-5 rounded-full border font-mono-cm font-extrabold text-[9px] flex items-center justify-center shadow uppercase ${badgeClasses}`}
+                      >
+                        {coach.trim()[0] || "T"}
+                      </span>
+                    );
+                  })}
                 </div>
                 <div className="text-[10px] leading-tight">
                   <div className="font-mono-cm font-bold text-[#facc15] uppercase tracking-wider">
                     TRÄNARE
                   </div>
-                  <div className="text-white font-display font-bold uppercase tracking-wide">
-                    Lars, Jocke & Sofia
+                  <div className="text-white font-display font-bold uppercase tracking-wide max-w-[130px] truncate">
+                    {coachList.join(", ")}
                   </div>
                 </div>
               </div>
+
+              {onOpenAdminModal && (
+                <button
+                  type="button"
+                  onClick={onOpenAdminModal}
+                  className={`px-2 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-1 transition active:scale-95 ${
+                    authRole === "superadmin"
+                      ? "bg-[#facc15] text-slate-950 border-yellow-200 shadow"
+                      : "bg-[#040d1a]/80 border-sky-300/30 text-sky-200 hover:text-white"
+                  }`}
+                  title={
+                    authRole === "superadmin"
+                      ? "Admin: Skapa lag, WhatsApp-inbjudningar & byt aktivt lag"
+                      : "Lagprofil & byt lagkod"
+                  }
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>{authRole === "superadmin" ? "Admin" : "Lagkod"}</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -1952,27 +2257,29 @@ export function VarmbolMatchApp() {
                 ? ` · ${new Date(syncUpdatedAt).toLocaleTimeString("sv-SE")}`
                 : ""}
             </span>
-            <button
-              type="button"
-              onClick={() => handleSetSyncMode("control")}
-              className="shrink-0 px-2 py-0.5 rounded bg-emerald-400 text-slate-950 font-extrabold uppercase text-[10px]"
-            >
-              Ta över
-            </button>
+            {!isReadOnlyFollower && (
+              <button
+                type="button"
+                onClick={() => handleSetSyncMode("control")}
+                className="shrink-0 px-2 py-0.5 rounded bg-emerald-400 text-slate-950 font-extrabold uppercase text-[10px]"
+              >
+                Ta över
+              </button>
+            )}
           </div>
         )}
         {activeTab === "match" && matchState.status === "finished" && (
           <div className="rounded-xl bg-emerald-950/80 border-2 border-[#facc15] px-3 py-2.5 flex flex-wrap items-center justify-between gap-2 shrink-0 shadow-lg">
             <div>
               <div className="font-display font-extrabold text-sm uppercase text-[#facc15]">
-                Matchen slut · Värmbols FC {matchState.ourScore} – {matchState.opponentScore} {matchState.config.opponent || "Motståndare"}
+                Matchen slut · {teamProfile.clubName} {matchState.ourScore} – {matchState.opponentScore} {matchState.config.opponent || "Motståndare"}
               </div>
               <div className="font-mono-cm text-[11px] text-emerald-200">
                 Alla tider och mål räknas in i Cupen totalt.
               </div>
             </div>
             <div className="flex items-center gap-1.5">
-              {nextCupMatch ? (
+              {isVfcDefault && nextCupMatch ? (
                 <button
                   type="button"
                   disabled={isFollowing}
@@ -2109,7 +2416,7 @@ export function VarmbolMatchApp() {
                   {/* Ställning VFC : Motståndare */}
                   <div className="flex flex-col justify-center bg-[#040a14] border border-sky-400/30 rounded-lg px-2 py-1 shrink-0">
                     <div className="flex items-center justify-between text-[9px] font-display font-extrabold uppercase tracking-wider leading-none mb-1">
-                      <span className="text-sky-300">VFC</span>
+                      <span className="text-sky-300">{teamProfile.shortName}</span>
                       <span className="text-amber-300 truncate max-w-[52px]">
                         {matchState.config.opponent || "MOT"}
                       </span>
@@ -2585,12 +2892,12 @@ export function VarmbolMatchApp() {
                   </div>
                 </div>
 
-                {/* Scoreboard: Värmbols FC vs Motståndare */}
+                {/* Scoreboard: Lag vs Motståndare */}
                 <div className="sm:col-span-4 flex items-center justify-between bg-[#040a14] border border-sky-400/25 rounded-lg px-3 py-2">
                   <div className="flex items-center gap-1.5">
                     <div className="text-left">
-                      <div className="font-display font-extrabold text-xs uppercase tracking-wider text-sky-300">
-                        VÄRMBOLS FC
+                      <div className="font-display font-extrabold text-xs uppercase tracking-wider text-sky-300 truncate max-w-[110px]">
+                        {teamProfile.clubName}
                       </div>
                       <div className="flex items-center gap-1 mt-0.5">
                         <button
@@ -2873,14 +3180,20 @@ export function VarmbolMatchApp() {
 
                 <div className="flex items-center justify-between gap-2 bg-[#166534] px-3 py-1.5 border-y border-black/30">
                   <div className="flex items-center gap-2 min-w-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src="/club/varmbol-logo-white.png"
-                      alt=""
-                      className="w-5 h-5 object-contain shrink-0"
-                    />
+                    {teamProfile.logoUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={teamProfile.logoUrl}
+                        alt=""
+                        className="w-5 h-5 object-contain shrink-0"
+                      />
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded bg-black/30 font-display font-extrabold text-[10px] text-[#facc15] uppercase shrink-0">
+                        {teamProfile.shortName}
+                      </span>
+                    )}
                     <span className="font-display font-extrabold text-xs sm:text-sm uppercase tracking-wide text-white truncate">
-                      Värmbols FC
+                      {teamProfile.clubName}
                     </span>
                     <span className="font-mono-cm font-bold text-[11px] text-white/80 shrink-0">
                       {currentFormation}
@@ -3254,10 +3567,10 @@ export function VarmbolMatchApp() {
               <div className="cm-header-bar px-4 py-3 flex items-center justify-between gap-3">
                 <div>
                   <span className="px-1.5 py-0.5 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[10px] uppercase">
-                    VÄRMBOLS IP · KATRINEHOLM
+                    {teamProfile.arenaName || `${teamProfile.clubName} · HEMMAPLAN`}
                   </span>
                   <h2 className="font-display font-extrabold text-xl sm:text-2xl uppercase text-white drop-shadow mt-1">
-                    VÄRMBOLS FC POJKAR 2017 · MATCHUPPSTÄLLNING
+                    {teamProfile.displayName} · MATCHUPPSTÄLLNING
                   </h2>
                   <p className="text-xs text-sky-100/90 mt-0.5">
                     Bocka i vilka spelare som är med idag och välj startuppställning i {draftConfig.formation}.
@@ -3266,27 +3579,29 @@ export function VarmbolMatchApp() {
               </div>
             </div>
 
-            <section className="cm-bevel rounded-xl p-4 space-y-3">
-              <h3 className="font-display font-extrabold text-sm uppercase tracking-wider text-[#facc15]">
-                Cupplan · Söndag 25 oktober
-              </h3>
-              <p className="text-xs text-slate-300">10 spelare · 1–4–1 · Målvakten står hela matchen och ingår inte i bytesförslagen.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {CUP_MATCHES.map((match) => (
-                  <button key={match.id} type="button" disabled={isFollowing}
-                    onClick={() => handleApplyPresetEvent(match)}
-                    aria-pressed={draftConfig.eventTitle === `Provcup 25 okt · ${match.title}`}
-                    className={`text-left p-3 rounded-lg border disabled:opacity-50 ${draftConfig.eventTitle === `Provcup 25 okt · ${match.title}` ? "bg-[#005cb9]/40 border-[#facc15]" : "bg-[#061224] border-white/10"}`}>
-                    <span className="block font-display font-extrabold text-sm text-white">{match.title}</span>
-                    <span className="block mt-1 text-xs text-slate-300">{match.subtitle}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-slate-300">Välj match, kontrollera startuppställningen och tryck Starta match längst ner. Första matchen följer skissen. I övriga matcher tar Oscar den nya målvaktens utespelarplats som förval; ändra vid behov.</p>
-              <div className="border-t border-white/10 pt-3 space-y-2">
-                {CUP_COACH_NOTES.map((note) => <p key={note.role} className="text-sm text-slate-200"><strong className="text-[#facc15]">{note.role}:</strong> {note.text}</p>)}
-              </div>
-            </section>
+            {isVfcDefault && (
+              <section className="cm-bevel rounded-xl p-4 space-y-3">
+                <h3 className="font-display font-extrabold text-sm uppercase tracking-wider text-[#facc15]">
+                  Cupplan · Söndag 25 oktober
+                </h3>
+                <p className="text-xs text-slate-300">10 spelare · 1–4–1 · Målvakten står hela matchen och ingår inte i bytesförslagen.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {CUP_MATCHES.map((match) => (
+                    <button key={match.id} type="button" disabled={isFollowing}
+                      onClick={() => handleApplyPresetEvent(match)}
+                      aria-pressed={draftConfig.eventTitle === `Provcup 25 okt · ${match.title}`}
+                      className={`text-left p-3 rounded-lg border disabled:opacity-50 ${draftConfig.eventTitle === `Provcup 25 okt · ${match.title}` ? "bg-[#005cb9]/40 border-[#facc15]" : "bg-[#061224] border-white/10"}`}>
+                      <span className="block font-display font-extrabold text-sm text-white">{match.title}</span>
+                      <span className="block mt-1 text-xs text-slate-300">{match.subtitle}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-300">Välj match, kontrollera startuppställningen och tryck Starta match längst ner. Första matchen följer skissen. I övriga matcher tar Oscar den nya målvaktens utespelarplats som förval; ändra vid behov.</p>
+                <div className="border-t border-white/10 pt-3 space-y-2">
+                  {CUP_COACH_NOTES.map((note) => <p key={note.role} className="text-sm text-slate-200"><strong className="text-[#facc15]">{note.role}:</strong> {note.text}</p>)}
+                </div>
+              </section>
+            )}
 
             {/* 1. Välj Match / Cup & Motståndare */}
             <section className="cm-bevel rounded-xl p-4 space-y-3">
@@ -3479,6 +3794,13 @@ export function VarmbolMatchApp() {
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     type="button"
+                    onClick={() => setShowBulkImport((v) => !v)}
+                    className="px-2.5 py-1 rounded bg-[#061224] hover:bg-[#0f2547] border border-sky-400/30 text-xs font-mono-cm font-bold text-sky-200"
+                  >
+                    📋 Klistra in trupp
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleRotateStartersByCupFairness}
                     className="px-2.5 py-1 rounded bg-[#0f2547] hover:bg-[#173562] border border-[#facc15]/50 text-xs font-mono-cm font-bold text-[#facc15]"
                     title="Välj de 6 utespelare som spelat minst i cupen hittills (eller bänkspelarna) i startelvan"
@@ -3498,6 +3820,44 @@ export function VarmbolMatchApp() {
                   </button>
                 </div>
               </div>
+
+              {(roster.length === 0 || showBulkImport) && !isFollowing && (
+                <div className="p-3.5 rounded-xl bg-[#040c1a] border-2 border-[#facc15]/60 space-y-2.5">
+                  <div className="font-display font-extrabold text-sm uppercase text-[#facc15]">
+                    {roster.length === 0
+                      ? `Snabbstart för ${teamProfile.displayName}: Lägg in era spelare`
+                      : "Klistra in spelarnamn"}
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    Skriv eller klistra in spelarnas förnamn (ett per rad eller med kommatecken, t.ex. från laget.se eller WhatsApp).
+                  </p>
+                  <textarea
+                    rows={3}
+                    value={bulkPlayersText}
+                    onChange={(e) => setBulkPlayersText(e.target.value)}
+                    placeholder="Exempel: Kalle, Olle, William G, Liam, Noah, Hugo, Emil..."
+                    className="w-full px-3 py-2 rounded-lg bg-[#081529] border border-sky-400/30 text-xs text-white font-mono-cm"
+                  />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleBulkImportPlayers(false)}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-display font-extrabold text-xs uppercase"
+                    >
+                      + Lägg till i truppen
+                    </button>
+                    {roster.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleBulkImportPlayers(true)}
+                        className="px-3 py-1.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-[#facc15] border border-[#facc15]/40 font-display font-bold text-xs uppercase"
+                      >
+                        Ersätt hela truppen
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {roster.map((player) => {
@@ -3616,6 +3976,16 @@ export function VarmbolMatchApp() {
                         >
                           {player.activeInSquad ? "MED" : "EJ MED"}
                         </button>
+                        {!isFollowing && !isVfcDefault && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePlayerFromRoster(player.id)}
+                            title={`Ta bort ${player.name} ur truppen`}
+                            className="p-1 rounded bg-slate-950/80 hover:bg-rose-950 text-slate-500 hover:text-rose-300 border border-white/10"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -3665,10 +4035,10 @@ export function VarmbolMatchApp() {
         {activeTab === "stats" && (
           <div className="space-y-4">
             <section className="cm-bevel rounded-xl overflow-hidden">
-              <div className="cm-header-bar px-4 py-2.5 flex items-center justify-between">
+              <div className="cm-header-bar px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h2 className="font-display font-extrabold text-base uppercase tracking-wider text-white">
-                    SPELTIDSRAPPORT · VÄRMBOLS FC vs{" "}
+                    SPELTIDSRAPPORT · {teamProfile.clubName} vs{" "}
                     {matchState.config.opponent}
                   </h2>
                   <p className="text-[11px] font-mono-cm text-sky-200">
@@ -3676,6 +4046,14 @@ export function VarmbolMatchApp() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleShareSummaryWhatsApp}
+                    className="px-2.5 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-extrabold text-xs uppercase flex items-center gap-1 shadow"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>Dela i WhatsApp</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleCopyCupSummary}
@@ -3868,7 +4246,7 @@ export function VarmbolMatchApp() {
                   >
                     <div>
                       <div className="font-display font-extrabold text-sm uppercase text-white">
-                        Värmbols FC {sm.ourScore} – {sm.opponentScore}{" "}
+                        {teamProfile.clubName} {sm.ourScore} – {sm.opponentScore}{" "}
                         {sm.opponent}
                       </div>
                       <div className="text-xs font-mono-cm text-slate-400">
@@ -3895,6 +4273,8 @@ export function VarmbolMatchApp() {
           <GuideView
             soundEnabled={soundEnabled}
             onPreview={(name) => cue(name)}
+            clubName={teamProfile.clubName}
+            coaches={coachList}
           />
         )}
       </main>
@@ -4084,10 +4464,10 @@ export function VarmbolMatchApp() {
             <div className="cm-header-bar px-4 py-3 flex items-center justify-between gap-2">
               <div>
                 <div className="text-[11px] font-mono-cm font-bold uppercase text-[#facc15]">
-                  {matchState.config.eventTitle || "VÄRMBOLS FC P2017"} · PERIOD {matchState.currentPeriod}
+                  {matchState.config.eventTitle || teamProfile.displayName} · PERIOD {matchState.currentPeriod}
                 </div>
                 <h3 className="font-display font-extrabold text-xl sm:text-2xl uppercase text-white">
-                  SAMLING · VÄRMBOLS FC vs {matchState.config.opponent || "MOTSTÅNDARE"}
+                  SAMLING · {teamProfile.clubName} vs {matchState.config.opponent || "MOTSTÅNDARE"}
                 </h3>
               </div>
               <button

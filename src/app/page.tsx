@@ -1,5 +1,5 @@
-import { VarmbolMatchApp } from "@/components/VarmbolMatchApp";
+import { TeamAccessGate } from "@/components/TeamAccessGate";
 
 export default function HomePage() {
-  return <VarmbolMatchApp />;
+  return <TeamAccessGate />;
 }

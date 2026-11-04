@@ -61,19 +61,28 @@ const SECTIONS: { title: string; body: string }[] = [
 export function GuideView({
   soundEnabled,
   onPreview,
+  clubName = "Värmbols FC",
+  coaches = ["Lars", "Jocke", "Sofia"],
 }: {
   soundEnabled: boolean;
   onPreview: (cue: SoundCue) => void;
+  clubName?: string;
+  coaches?: string[];
 }) {
+  const coachesLabel =
+    coaches.length > 1
+      ? `${coaches.slice(0, -1).join(", ")} och ${coaches[coaches.length - 1]}`
+      : coaches[0] || "tränarna";
+
   return (
     <div className="space-y-4">
       <section className="cm-bevel rounded-xl overflow-hidden">
         <div className="cm-header-bar px-4 py-3">
           <h2 className="font-display font-extrabold text-lg uppercase tracking-wider text-white">
-            Så funkar sidlinjen
+            Så funkar sidlinjen · {clubName}
           </h2>
           <p className="text-[11px] font-mono-cm text-sky-100 mt-0.5">
-            Kort genomgång för Lars, Jocke och Sofia. En telefon, en match i taget.
+            Kort genomgång för {coachesLabel}. En telefon styr, övriga följer live.
           </p>
         </div>
         <div className="p-3 space-y-3">

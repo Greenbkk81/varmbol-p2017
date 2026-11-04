@@ -156,3 +156,65 @@ export interface SavedMatchSummary {
     positionMs?: Record<string, number>;
   }[];
 }
+
+export type AuthRole = "coach" | "follower" | "superadmin";
+
+export interface TeamColors {
+  primary: string;   // t.ex. "#005cb9" (Värmbol blå)
+  secondary: string; // t.ex. "#facc15" (Värmbol gul)
+}
+
+/** Publik metadata för ett lag */
+export interface TeamProfile {
+  id: string;                 // Slug, t.ex. "vfc-p2017"
+  clubName: string;           // t.ex. "Värmbols FC"
+  teamName: string;           // t.ex. "P2017"
+  displayName: string;        // t.ex. "Värmbols FC P2017"
+  shortName: string;          // t.ex. "VFC"
+  arenaName?: string;         // t.ex. "Värmbols IP · Katrineholm"
+  coaches: string[];          // t.ex. ["Lars", "Jocke", "Sofia"]
+  logoUrl?: string;           // t.ex. "/club/varmbol-logo-white.png"
+  colors: TeamColors;
+  defaultFormat: MatchFormat;
+  defaultFormation: TacticalFormation;
+  isDefaultVfcTeam?: boolean; // Om laget ska visa den specialbyggda cupplanen 25 okt
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Server-post i TeamRegistry (innehåller koder + blob-sökväg) */
+export interface TeamRegistryEntry extends TeamProfile {
+  coachCode: string;          // Tränarkod (skriv + läs), t.ex. "VFC2017"
+  followCode?: string;        // Valfri följarkod (endast läs/follow), t.ex. "VFCLIVE"
+  blobPath: string;           // Sökväg i Vercel Blob
+  active: boolean;
+}
+
+/** Lagras i Vercel Blob: "system/teams-registry-v1.json" */
+export interface TeamRegistry {
+  version: number;
+  updatedAt: number;
+  teams: TeamRegistryEntry[];
+}
+
+/** Utökad LiveSyncSnapshot (bakåtkompatibel med befintlig JSON i Blob) */
+export interface LiveSyncSnapshot {
+  version: number;
+  updatedAt: number;
+  teamId?: string;
+  teamProfile?: TeamProfile;
+  controllerId: string;
+  controllerLabel?: string;
+  roster: RosterPlayer[];
+  matchState: MatchState;
+  savedMatches: SavedMatchSummary[];
+}
+
+/** Signerad sessionspayload */
+export interface AuthSessionPayload {
+  role: AuthRole;
+  teamId: string | "*";       // "*" för superadmin, annars t.ex. "vfc-p2017"
+  iat: number;
+  exp: number;
+}
+

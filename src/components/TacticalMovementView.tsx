@@ -4,12 +4,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Compass,
   Hand,
+  Lock,
   Pause,
   Play,
   RotateCcw,
   Shield,
   Sparkles,
   Target,
+  Unlock,
   Zap,
 } from "lucide-react";
 import { TacticalFormation } from "@/lib/types";
@@ -55,8 +57,11 @@ interface TacticalScenario {
   coachKeyPoint: string;
   ballX: number;
   ballY: number;
+  defaultPossession?: "us" | "opponent";
   moves: SlotMove[];
 }
+
+type PossessionMode = "us" | "opponent";
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
@@ -72,6 +77,7 @@ const SCENARIOS_1_4_1: TacticalScenario[] = [
     title: "1. Grundposition · Vänsterpar & Högerpar",
     shortTitle: "⚖️ Grundposition",
     badge: "UTGÅNGSLÄGE",
+    defaultPossession: "us",
     summary:
       "Fyra mittfältare uppdelade i två tydliga par: Vänsterparet (VM + IMV) har hela vänstersidan tillsammans och Högerparet (IMH + HM) har hela högersidan tillsammans.",
     coachKeyPoint:
@@ -191,6 +197,7 @@ const SCENARIOS_1_4_1: TacticalScenario[] = [
     title: "2. Anfall Vänster · VM går fram, IMV säkrar bakom",
     shortTitle: "⚡⬅️ Anfall Vänster",
     badge: "VI HAR BOLLEN TILL VÄNSTER",
+    defaultPossession: "us",
     summary:
       "När Vänsteryttern (VM) trycker fram med bollen följer CM Vänster (IMV) med snett bakom på vänstersidan (inte förbi och inte ända nere hos backen). Då är kanten säkrad om vi tappar bollen!",
     coachKeyPoint:
@@ -310,6 +317,7 @@ const SCENARIOS_1_4_1: TacticalScenario[] = [
     title: "3. Anfall Höger · HM går fram, IMH säkrar bakom",
     shortTitle: "⚡➡️ Anfall Höger",
     badge: "VI HAR BOLLEN TILL HÖGER",
+    defaultPossession: "us",
     summary:
       "Samma regel på högersidan! När Högeryttern (HM) går till anfall tar CM Höger (IMH) ansvar snett bakom på högerkanten. Vänsteryttern (VM) kliver in på bortre stolpen.",
     coachKeyPoint:
@@ -425,12 +433,133 @@ const SCENARIOS_1_4_1: TacticalScenario[] = [
     ],
   },
   {
-    id: "defense_flank",
-    title: "4. Försvar & Omställning · En pressar, kompisen täcker!",
-    shortTitle: "🛡️ Försvar (Kantpar)",
-    badge: "MOTSTÅNDAREN HAR BOLLEN",
+    id: "high_press",
+    title: "4. Hög Press (De har bollen i vårt anfallsläge) · Lås fast dem!",
+    shortTitle: "🦅 Hög Press",
+    badge: "DE HAR BOLLEN HÖGT UPP",
+    defaultPossession: "opponent",
     summary:
-      "När motståndaren anfaller på en kant jobbar kantparet tillsammans: en sätter press på bollhållaren och kompisen i paret täcker ytan snett bakom (utan att sjunka ända ner i knät på backen).",
+      "När motståndaren har bollen nere vid sitt eget straffområde (i vårt anfallsläge): FW styr ut dem mot en kant, närmaste ytter (VM/HM) sätter 1:a press och CM-kompisen (IMV/IMH) täcker direkt snett bakom!",
+    coachKeyPoint:
+      "Spring inte in i målgården när DE har bollen! FW styr ut mot kanten → Yttern kliver i press → CM täcker passningen bakom!",
+    ballX: 24,
+    ballY: 20,
+    moves: [
+      {
+        slotIndex: 0,
+        code: "MV",
+        roleTitle: "Målvakt",
+        partnerLabel: "Hög utgångsposition",
+        fromX: 50,
+        fromY: 88,
+        toX: 46,
+        toY: 82,
+        actionBadge: "Vaken på långboll",
+        attackTask: "När vi vinner bollen högt är det nära till mål!",
+        defenseTask: "Stå några meter ut så du tar hand om eventuella rensningar.",
+        scenarioNote: "Kliver fram så ytan bakom vår back krymper.",
+        zoneColor: "amber",
+      },
+      {
+        slotIndex: 1,
+        code: "LIB",
+        roleTitle: "Back / Sista man",
+        partnerLabel: "Håller ihop laget vid mittplan",
+        fromX: 50,
+        fromY: 70,
+        toX: 44,
+        toY: 60,
+        actionBadge: "Ligger tätt bakom",
+        attackTask: "Om vi bryter högt är du spelbar för skott eller vändning.",
+        defenseTask: "Kliv upp mot mittlinjen så det inte blir stort hål bakom IMV och IMH!",
+        scenarioNote: "Står strax bakom mittlinjen och har koll på deras forward.",
+        zoneColor: "emerald",
+      },
+      {
+        slotIndex: 2,
+        code: "VM",
+        roleTitle: "Vänsterytter (Vänsterpar)",
+        partnerLabel: "1:a press med IMV bakom!",
+        fromX: 16,
+        fromY: 42,
+        toX: 20,
+        toY: 25,
+        actionBadge: "1:a PRESS HÖGT!",
+        attackTask: "Vinner du bollen här uppe är du fri mot mål eller kan spela FW!",
+        defenseTask: "Kliv fram och pressa deras back på kanten så de inte kan spela rakt fram!",
+        scenarioNote: "Sätter hård 1:a press på deras uppspel till vänster.",
+        zoneColor: "yellow",
+      },
+      {
+        slotIndex: 3,
+        code: "IMV",
+        roleTitle: "CM Vänster (Vänsterpar)",
+        partnerLabel: "Låser kanten bakom VM",
+        fromX: 37,
+        fromY: 49,
+        toX: 29,
+        toY: 39,
+        actionBadge: "2:a LÅSER KANTEN",
+        attackTask: "Bryter du deras uppspel kan du gå direkt på skott!",
+        defenseTask: "Ligg 8–10m snett bakom VM och ta passningen om de försöker spela förbi VM.",
+        scenarioNote: "Täcker upp snett bakom VM så vänsterkanten är helt låst.",
+        zoneColor: "yellow",
+      },
+      {
+        slotIndex: 4,
+        code: "IMH",
+        roleTitle: "CM Höger (Högerpar)",
+        partnerLabel: "Stänger mitten",
+        fromX: 63,
+        fromY: 49,
+        toX: 50,
+        toY: 43,
+        actionBadge: "STÄNGER MITTEN",
+        attackTask: "Redo att vända spelet om vi vinner bollen.",
+        defenseTask: "Kliv in i mitten och markera deras centrala mittfältare!",
+        scenarioNote: "Flyttar in i mitten så motståndaren inte kan spela ut genom centrum.",
+        zoneColor: "sky",
+      },
+      {
+        slotIndex: 5,
+        code: "HM",
+        roleTitle: "Högerytter (Högerpar)",
+        partnerLabel: "Kliv in & bevaka spelvändning",
+        fromX: 84,
+        fromY: 42,
+        toX: 68,
+        toY: 36,
+        actionBadge: "BEVAKAR BORTRE",
+        attackTask: "Stick direkt mot mål om vi bryter bollen!",
+        defenseTask: "Stå INTE i målgården när de har bollen — kliv ner/in till straffområdeshöjd och ha koll om de vänder spelet!",
+        scenarioNote: "Ligger på lur snett inåt, redo att antingen bryta vändning eller gå på avslut.",
+        zoneColor: "sky",
+      },
+      {
+        slotIndex: 6,
+        code: "FW",
+        roleTitle: "Forward / Spets",
+        partnerLabel: "Styr dem mot en kant!",
+        fromX: 50,
+        fromY: 18,
+        toX: 38,
+        toY: 20,
+        actionBadge: "STYR MOT KANTEN!",
+        attackTask: "Var redo framför mål så fort VM eller IMV bryter bollen!",
+        defenseTask: "Båg-löp mot bollhållaren så att du stänger passningen tillbaka till målvakten/andra backen!",
+        scenarioNote: "Stänger tillbakapass och tvingar dem rakt i famnen på vårt Vänsterpar.",
+        zoneColor: "amber",
+      },
+    ],
+  },
+  {
+    id: "defense_flank",
+    title: "5. Försvar på Egen Planhalva · En pressar, kompisen täcker!",
+    shortTitle: "🛡️ Försvar (Lågt)",
+    badge: "MOTSTÅNDAREN ANFALLER",
+    defaultPossession: "opponent",
+    summary:
+      "När motståndaren anfaller på vår planhalva jobbar kantparet tillsammans: en sätter press på bollhållaren och kompisen i paret täcker ytan snett bakom (utan att sjunka ända ner i knät på backen).",
     coachKeyPoint:
       "Lämna aldrig kanten åt bara en spelare! En stöter på bollen — kompisen stänger passningen/löpningen bakom.",
     ballX: 18,
@@ -545,9 +674,10 @@ const SCENARIOS_1_4_1: TacticalScenario[] = [
   },
   {
     id: "build_up",
-    title: "5. Uppspel från Målvakt · Bredda & visa er i par",
+    title: "6. Uppspel från Målvakt · Bredda & visa er i par",
     shortTitle: "🎯 Uppspel MV",
     badge: "MÅLVAKTEN HAR BOLLEN",
+    defaultPossession: "us",
     summary:
       "När vår målvakt har bollen: Yttrarna (VM & HM) går hela vägen ut till sidlinjen. Innermittfältarna (IMV & IMH) möter i fickorna snett framför backen så vi har trianglar på båda sidorna!",
     coachKeyPoint:
@@ -670,6 +800,7 @@ const SCENARIOS_1_1_3_1: TacticalScenario[] = [
     title: "1. Grundposition (Jocke) · Back + Ankare + 3 Mitt",
     shortTitle: "⚖️ Grundposition",
     badge: "1-1-3-1 UTGÅNGSLÄGE",
+    defaultPossession: "us",
     summary:
       "En sista back (LIB) och ett defensivt ankare (DM) strax framför som låser mitten. Framför dem ligger 3 mittfältare (VM–CM–HM) och 1 forward (FW).",
     coachKeyPoint:
@@ -787,8 +918,9 @@ const SCENARIOS_1_1_3_1: TacticalScenario[] = [
   {
     id: "attack",
     title: "2. Anfall i 1-1-3-1 · Trean fyller på, Ankaret (DM) säkrar!",
-    shortTitle: "⚡ Anfall (4 fram, DM säkrar)",
+    shortTitle: "⚡ Anfall (4 fram)",
     badge: "VI ANFALLER",
+    defaultPossession: "us",
     summary:
       "I 1-1-3-1 fyller VM, CM, HM och FW på i anfallet medan Ankaret (DM) stannar kvar utanför straffområdet som trygg vägg och kontringsstoppare framför backen (LIB).",
     coachKeyPoint:
@@ -904,10 +1036,131 @@ const SCENARIOS_1_1_3_1: TacticalScenario[] = [
     ],
   },
   {
+    id: "high_press",
+    title: "3. Hög Press i 1-1-3-1 · FW & Trean låser, DM täcker bakom!",
+    shortTitle: "🦅 Hög Press",
+    badge: "DE HAR BOLLEN HÖGT UPP",
+    defaultPossession: "opponent",
+    summary:
+      "När motståndaren har bollen nere vid sitt eget mål: FW styr dem mot kanten, VM–CM–HM kliver upp på deras passningsalternativ och Ankaret (DM) ligger precis bakom och plockar bollen om de slår långt!",
+    coachKeyPoint:
+      "FW styr ut → VM/CM/HM låser närmaste spelare → DM stannar bakom och suger upp bollen!",
+    ballX: 25,
+    ballY: 20,
+    moves: [
+      {
+        slotIndex: 0,
+        code: "MV",
+        roleTitle: "Målvakt",
+        partnerLabel: "Hög position",
+        fromX: 50,
+        fromY: 88,
+        toX: 46,
+        toY: 82,
+        actionBadge: "Vaken på långboll",
+        attackTask: "Snabb igångsättning.",
+        defenseTask: "Stå högt och ta långbollar.",
+        scenarioNote: "Kliver upp några meter.",
+        zoneColor: "amber",
+      },
+      {
+        slotIndex: 1,
+        code: "LIB",
+        roleTitle: "Back / Sista man",
+        partnerLabel: "Säkrar bakom DM",
+        fromX: 50,
+        fromY: 73,
+        toX: 44,
+        toY: 62,
+        actionBadge: "Säkrar bakom DM",
+        attackTask: "Vänd spelet när vi bryter.",
+        defenseTask: "Håll koll på deras forward vid mittlinjen.",
+        scenarioNote: "Flyttar upp bakom DM.",
+        zoneColor: "emerald",
+      },
+      {
+        slotIndex: 2,
+        code: "VM",
+        roleTitle: "Vänstermitt / Ytter",
+        partnerLabel: "1:a press på kanten",
+        fromX: 18,
+        fromY: 36,
+        toX: 20,
+        toY: 25,
+        actionBadge: "1:a PRESS HÖGT!",
+        attackTask: "Bryt och gå direkt mot mål!",
+        defenseTask: "Kliv fram och lås deras back på vår vänsterkant.",
+        scenarioNote: "Pressar bollhållaren högt på vänsterkanten.",
+        zoneColor: "yellow",
+      },
+      {
+        slotIndex: 3,
+        code: "DM",
+        roleTitle: "Defensiv mitt / Ankare",
+        partnerLabel: "Täcker bakom trean",
+        fromX: 50,
+        fromY: 56,
+        toX: 38,
+        toY: 46,
+        actionBadge: "ANKARE · SÄKRAR",
+        attackTask: "Skjut eller frispela när du bryter deras utspark!",
+        defenseTask: "Skjut över mot bollsidan bakom VM och CM så de inte kan spela förbi vår press.",
+        scenarioNote: "Ligger som uppsamlare bakom vår höga press.",
+        zoneColor: "emerald",
+      },
+      {
+        slotIndex: 4,
+        code: "CM",
+        roleTitle: "Central offensiv mitt",
+        partnerLabel: "Låser mitten högt",
+        fromX: 50,
+        fromY: 36,
+        toX: 42,
+        toY: 32,
+        actionBadge: "LÅSER MITTEN",
+        attackTask: "Direkt avslut vid bollvinst!",
+        defenseTask: "Markera bort deras innermittfältare så de inte kan spela in i mitten.",
+        scenarioNote: "Stänger centrala uppspel.",
+        zoneColor: "sky",
+      },
+      {
+        slotIndex: 5,
+        code: "HM",
+        roleTitle: "Högermitt / Ytter",
+        partnerLabel: "Bevakar spelvändning",
+        fromX: 82,
+        fromY: 36,
+        toX: 68,
+        toY: 36,
+        actionBadge: "FLYTTAR INÅT",
+        attackTask: "Redo på bortre ytan vid bollvinst!",
+        defenseTask: "Kliv inåt så laget är kompakt och bryt om de försöker vända sida.",
+        scenarioNote: "Kryper inåt mot mitten när bollen är på vänsterkanten.",
+        zoneColor: "sky",
+      },
+      {
+        slotIndex: 6,
+        code: "FW",
+        roleTitle: "Forward / Spets",
+        partnerLabel: "Styr dem mot kanten",
+        fromX: 50,
+        fromY: 16,
+        toX: 38,
+        toY: 20,
+        actionBadge: "STYR MOT KANTEN!",
+        attackTask: "Målchans direkt om vi bryter!",
+        defenseTask: "Stäng passningen tillbaka till målvakten och andra backen.",
+        scenarioNote: "Tvingar ut motståndaren mot vår vänsterkant.",
+        zoneColor: "amber",
+      },
+    ],
+  },
+  {
     id: "defense",
-    title: "3. Försvar i 1-1-3-1 · DM möter tidigt, yttrarna jobbar hem",
-    shortTitle: "🛡️ Försvar (Centrallås)",
+    title: "4. Försvar i 1-1-3-1 · DM möter tidigt, yttrarna jobbar hem",
+    shortTitle: "🛡️ Försvar (Lågt)",
     badge: "MOTSTÅNDAREN ANFALLER",
+    defaultPossession: "opponent",
     summary:
       "När motståndaren anfaller kliver Ankaret (DM) fram och bromsar dem medan Backen (LIB) täcker ytan bakom. Yttrarna (VM & HM) måste jobba hem så vi inte blir 2-mot-4!",
     coachKeyPoint:
@@ -1024,9 +1277,10 @@ const SCENARIOS_1_1_3_1: TacticalScenario[] = [
   },
   {
     id: "build_up",
-    title: "4. Uppspel i 1-1-3-1 · LIB & DM nära, VM & HM breddar",
+    title: "5. Uppspel i 1-1-3-1 · LIB & DM nära, VM & HM breddar",
     shortTitle: "🎯 Uppspel MV",
     badge: "MÅLVAKTEN HAR BOLLEN",
+    defaultPossession: "us",
     summary:
       "Vid inspark kliver Backen (LIB) lite åt sidan och Ankaret (DM) möter i mitten. Yttrarna (VM & HM) breddar helt ut till sidlinjen och CM hittar fria ytan högre upp.",
     coachKeyPoint:
@@ -1145,12 +1399,13 @@ const SCENARIOS_1_1_3_1: TacticalScenario[] = [
 
 /**
  * Smart kontinuerlig beräkning av alla 7 spelares positioner & uppgifter
- * när man drar bollen fritt på planen (eller kör Auto-Play).
+ * när man drar bollen fritt på planen (både när VI har bollen och när MOTSTÅNDAREN har bollen!).
  */
 function computeBallDrivenScenario(
   boardFormation: "1-4-1" | "1-1-3-1",
   ballX: number,
   ballY: number,
+  possession: PossessionMode,
   baseScenario: TacticalScenario
 ): TacticalScenario {
   const bx = clamp(ballX, 7, 93);
@@ -1164,7 +1419,9 @@ function computeBallDrivenScenario(
   // Hur högt upp i banan bollen är (attackFactor: 1 vid KAIK:s mål, defenseFactor: 1 vid vårt mål)
   const attackFactor = clamp((54 - by) / 36, 0, 1);
   const defenseFactor = clamp((by - 46) / 38, 0, 1);
-  const isBuildUp = by > 76 && Math.abs(side) < 0.55;
+  const isBuildUp =
+    possession === "us" && by > 76 && Math.abs(side) < 0.55;
+  const isOpponentHighUp = possession === "opponent" && by < 45;
 
   const baseMoves = baseScenario.moves;
 
@@ -1181,6 +1438,8 @@ function computeBallDrivenScenario(
       : clamp(50 + side * 12, 36, 64);
     const libY = isBuildUp
       ? 74
+      : possession === "opponent"
+      ? clamp(72 - attackFactor * 12 + defenseFactor * 4, 58, 76)
       : clamp(70 - attackFactor * 12 + defenseFactor * 4, 56, 75);
 
     // 3. Vänsterytter (VM) - slot 2
@@ -1194,17 +1453,35 @@ function computeBallDrivenScenario(
       vmY = 48;
       vmBadge = "BREDDA VÄNSTER!";
       vmNote = "Breddar ända ut till vänstra sidlinjen så målvakten/backen kan spela ut.";
+    } else if (possession === "opponent") {
+      // MOTSTÅNDAREN HAR BOLLEN (Hög press om bollen är högt upp, annars lägre försvar!)
+      if (leftFactor >= 0.15) {
+        vmX = clamp(lerp(20, 15, leftFactor), 13, 24);
+        vmY = clamp(by + 5, 22, 52);
+        vmBadge = by < 38 ? "1:a PRESS HÖGT!" : "1:a PRESS PÅ BOLL";
+        vmNote =
+          by < 38
+            ? "Kliv upp direkt och pressa deras spelare på vänsterkanten (IMV täcker bakom dig)!"
+            : "Sätter press på bollhållaren längs vänsterkanten med IMV bakom.";
+      } else {
+        // Motståndaren har bollen i mitten/höger -> VM kliver inåt och bevakar spelvändning (inte in i målgården!)
+        vmX = clamp(18 + rightFactor * 14, 18, 34);
+        vmY = clamp(36 - attackFactor * 4 + defenseFactor * 16, 32, 54);
+        vmBadge = rightFactor > 0.25 ? "BEVAKAR VÄNDNING ➡️" : "LÅSER VÄNSTER";
+        vmNote =
+          "När motståndaren har bollen på andra kanten kliver du inåt i banan och är redo om de vänder spelet!";
+      }
     } else if (leftFactor >= 0.15) {
-      // Bollen på vänster sida -> VM kliver mot bollen i djupled/press
+      // VI HAR BOLLEN PÅ VÄNSTER SIDA -> VM driver framåt!
       vmX = clamp(lerp(18, 13, leftFactor), 11, 24);
       vmY = clamp(lerp(42, by, 0.78), 16, 52);
-      vmBadge = by < 36 ? "DRIVER FRAMÅT ⚽" : "PRESSAR / MÖTER ⚽";
+      vmBadge = by < 36 ? "DRIVER FRAMÅT ⚽" : "SPELBAR VÄNSTER ⚽";
       vmNote =
         by < 36
           ? "Utmanar framåt på vänsterkanten med IMV som säkring snett bakom!"
-          : "Möter/pressar bollen på vänsterkanten medan IMV täcker ytan bakom.";
+          : "Möter bollen på vänsterkanten medan IMV säkrar bakom.";
     } else {
-      // Bollen i mitten eller till höger -> VM flyttar över!
+      // VI HAR BOLLEN I MITTEN ELLER TILL HÖGER -> VM smyger in på bortre stolpen!
       vmX = clamp(
         16 + rightFactor * (attackFactor > 0.35 ? 18 : 13),
         16,
@@ -1239,17 +1516,20 @@ function computeBallDrivenScenario(
       imvBadge = "MÖT I FICKAN";
       imvNote = "Möter spelbar snett framför backen och bildar triangel med VM.";
     } else if (leftFactor >= 0.15) {
-      // Sitter ihop i gummiband snett bakom VM (13-15 steg bakom VM, aldrig i knät på LIB!)
-      imvX = clamp(vmX + 12, 24, 38);
-      imvY = clamp(vmY + 15, 34, 60);
-      imvBadge = "SÄKRAR BAKOM VM!";
+      // Gummibandet snett bakom VM (både i anfall och i press!)
+      imvX = clamp(vmX + 11, 24, 38);
+      imvY = clamp(vmY + 14, 35, 60);
+      imvBadge =
+        possession === "opponent" ? "2:a TÄCKER BAKOM!" : "SÄKRAR BAKOM VM!";
       imvNote =
-        "Gummibandet! Följer med snett bakom VM på vänstersidan (utan att falla ner i knät på backen).";
+        possession === "opponent"
+          ? "Står 8–10m snett bakom VM och stänger passningen längs vänsterkanten!"
+          : "Gummibandet! Följer med snett bakom VM på vänstersidan (utan att falla ner i knät på backen).";
     } else {
-      // Bollen till höger/mitten -> IMV kliver in och balanserar mitten
       imvX = clamp(37 + rightFactor * 12, 36, 50);
-      imvY = clamp(49 - attackFactor * 10 + defenseFactor * 8, 38, 58);
-      imvBadge = rightFactor > 0.25 ? "STÄNGER MITTEN" : "BALANSERAR";
+      imvY = clamp(49 - attackFactor * 9 + defenseFactor * 8, 39, 58);
+      imvBadge =
+        possession === "opponent" ? "STÄNGER MITTEN" : "BALANSERAR MITTEN";
       imvNote = "Glider in centralt och hjälper till att låsa mitten.";
     }
 
@@ -1264,17 +1544,31 @@ function computeBallDrivenScenario(
       hmY = 48;
       hmBadge = "BREDDA HÖGER!";
       hmNote = "Breddar ända ut till högra sidlinjen för uppspel.";
+    } else if (possession === "opponent") {
+      if (rightFactor >= 0.15) {
+        hmX = clamp(lerp(80, 85, rightFactor), 76, 87);
+        hmY = clamp(by + 5, 22, 52);
+        hmBadge = by < 38 ? "1:a PRESS HÖGT!" : "1:a PRESS PÅ BOLL";
+        hmNote =
+          by < 38
+            ? "Kliv upp direkt och pressa deras spelare på högerkanten (IMH täcker bakom dig)!"
+            : "Sätter press på bollhållaren på högerkanten medan IMH täcker ytan bakom.";
+      } else {
+        hmX = clamp(82 - leftFactor * 14, 66, 82);
+        hmY = clamp(36 - attackFactor * 4 + defenseFactor * 16, 32, 54);
+        hmBadge = leftFactor > 0.25 ? "⬅️ BEVAKAR VÄNDNING" : "LÅSER HÖGER";
+        hmNote =
+          "När motståndaren har bollen på andra kanten kliver du inåt och bevakar spelvändning!";
+      }
     } else if (rightFactor >= 0.15) {
-      // Bollen på höger sida -> HM kliver mot bollen
       hmX = clamp(lerp(82, 87, rightFactor), 76, 89);
       hmY = clamp(lerp(42, by, 0.78), 16, 52);
-      hmBadge = by < 36 ? "DRIVER FRAMÅT ⚽" : "PRESSAR / MÖTER ⚽";
+      hmBadge = by < 36 ? "DRIVER FRAMÅT ⚽" : "SPELBAR HÖGER ⚽";
       hmNote =
         by < 36
           ? "Utmanar framåt på högerkanten med IMH som säkring snett bakom!"
-          : "Möter/pressar bollen på högerkanten medan IMH täcker ytan bakom.";
+          : "Möter bollen på högerkanten medan IMH täcker ytan bakom.";
     } else {
-      // Bollen i mitten eller till vänster -> HM flyttar över!
       hmX = clamp(
         84 - leftFactor * (attackFactor > 0.35 ? 18 : 13),
         65,
@@ -1309,52 +1603,58 @@ function computeBallDrivenScenario(
       imhBadge = "MÖT I FICKAN";
       imhNote = "Möter spelbar i högerfickan framför backen.";
     } else if (rightFactor >= 0.15) {
-      // Gummiband snett bakom HM
-      imhX = clamp(hmX - 12, 62, 76);
-      imhY = clamp(hmY + 15, 34, 60);
-      imhBadge = "SÄKRAR BAKOM HM!";
+      imhX = clamp(hmX - 11, 62, 76);
+      imhY = clamp(hmY + 14, 35, 60);
+      imhBadge =
+        possession === "opponent" ? "2:a TÄCKER BAKOM!" : "SÄKRAR BAKOM HM!";
       imhNote =
-        "Gummibandet! Följer med snett bakom HM på högersidan så kanten aldrig lämnas öppen.";
+        possession === "opponent"
+          ? "Står 8–10m snett bakom HM och stänger passningen längs högerkanten!"
+          : "Gummibandet! Följer med snett bakom HM på högersidan så kanten aldrig lämnas öppen.";
     } else {
-      // Bollen till vänster/mitten -> IMH balanserar mitten
       imhX = clamp(63 - leftFactor * 12, 50, 64);
-      imhY = clamp(49 - attackFactor * 10 + defenseFactor * 8, 38, 58);
-      imhBadge = leftFactor > 0.25 ? "STÄNGER MITTEN" : "BALANSERAR";
+      imhY = clamp(49 - attackFactor * 9 + defenseFactor * 8, 39, 58);
+      imhBadge =
+        possession === "opponent" ? "STÄNGER MITTEN" : "BALANSERAR MITTEN";
       imhNote = "Glider in i mitten som skottalternativ och balans.";
     }
 
     // 7. Forward (FW) - slot 6
-    const fwX = clamp(50 + side * 14, 34, 66);
+    const fwX =
+      possession === "opponent"
+        ? clamp(50 + side * 16, 30, 70)
+        : clamp(50 + side * 14, 34, 66);
     const fwY = isBuildUp
       ? 22
+      : possession === "opponent"
+      ? clamp(by + 4, 18, 34)
       : clamp(18 - attackFactor * 5 + defenseFactor * 13, 12, 32);
     const fwBadge =
-      attackFactor > 0.4
+      possession === "opponent"
+        ? isOpponentHighUp
+          ? "STYR UT MOT KANT!"
+          : "STÄNGER BAKÅTPASS"
+        : attackFactor > 0.4
         ? "IN FRAMFÖR MÅL!"
-        : defenseFactor > 0.3
-        ? "STÄNGER BAKÅTPASS"
         : "SPELBAR I DJUPET";
 
-    const dynamicTitle = isBuildUp
-      ? "🎯 Bollen hos Målvakt · Yttrarna breddar & CM möter i fickorna"
-      : leftFactor > 0.25
-      ? by < 42
-        ? "⚡⬅️ Bollen till Vänster · VM går fram & IMV säkrar bakom!"
-        : "🛡️⬅️ Bollen på Vänsterkant · Vänsterparet (VM+IMV) stänger sidan!"
-      : rightFactor > 0.25
-      ? by < 42
-        ? "⚡➡️ Bollen till Höger · HM går fram & IMH säkrar bakom!"
-        : "🛡️➡️ Bollen på Högerkant · Högerparet (IMH+HM) stänger sidan!"
-      : by < 36
-      ? "⚡ Bollen högt i Mitten · Båda paren fyller på & säkrar!"
-      : "⚖️ Bollen i Mitten · Vänsterpar & Högerpar håller ihop laget";
+    const dynamicTitle =
+      possession === "opponent"
+        ? isOpponentHighUp
+          ? "🦅 Hög Press (De har bollen i vårt anfallsläge) · FW styr ut & Kantparet låser!"
+          : "🛡️ Försvar (De har bollen) · Närmaste kantpar pressar & täcker, andra paret stänger mitten!"
+        : isBuildUp
+        ? "🎯 Bollen hos Målvakt · Yttrarna breddar & CM möter i fickorna"
+        : leftFactor > 0.25
+        ? "⚡⬅️ Vi anfaller Vänster · VM går fram & IMV säkrar bakom!"
+        : rightFactor > 0.25
+        ? "⚡➡️ Vi anfaller Höger · HM går fram & IMH säkrar bakom!"
+        : "⚡ Vi har bollen i Mitten · Vänsterpar & Högerpar fyller på och säkrar";
 
     const dynamicSummary =
-      leftFactor > 0.25
-        ? "Ser du hur hela laget flyttar över mot vänster? VM går på bollen, IMV följer med i gummibandet snett bakom, och HM smyger in från högerkanten!"
-        : rightFactor > 0.25
-        ? "Ser du hur hela laget flyttar över mot höger? HM går på bollen, IMH säkrar snett bakom i gummibandet, och VM kliver in från vänsterkanten!"
-        : "Dra bollen ⚽ åt vänster, höger, framåt eller bakåt så ser du hur Vänsterparet (VM+IMV) och Högerparet (IMH+HM) rör sig i takt med bollen!";
+      possession === "opponent"
+        ? "Motståndaren har bollen! Ser du hur vi INTE springer in i deras målgård, utan FW stänger tillbakapass, närmaste ytter sätter 1:a press och CM-kompisen täcker snett bakom?"
+        : "Vi har bollen! Dra bollen ⚽ fritt eller slå på 'Frigör gubbar' om du vill flytta enskilda spelare med fingret.";
 
     const updatedMoves: SlotMove[] = [
       {
@@ -1414,7 +1714,10 @@ function computeBallDrivenScenario(
     return {
       ...baseScenario,
       id: "live_ball",
-      badge: "🖐️ BOLLSTYRD RÖRELSE (LIVE)",
+      badge:
+        possession === "opponent"
+          ? "🛡️ DE HAR BOLLEN (LIVE PRESS)"
+          : "⚽ VI HAR BOLLEN (LIVE RÖRELSE)",
       title: dynamicTitle,
       summary: dynamicSummary,
       ballX: bx,
@@ -1438,46 +1741,53 @@ function computeBallDrivenScenario(
     ? 74
     : clamp(73 - attackFactor * 11 + defenseFactor * 3, 60, 76);
 
-  // DM (Ankare - slot 3): Följer bollen i sidled framför LIB och stannar utanför boxen i anfall!
   const dmX = isBuildUp ? 52 : clamp(50 + side * 16, 32, 68);
   const dmY = isBuildUp
     ? 62
-    : clamp(56 - attackFactor * 13 + defenseFactor * 5, 42, 62);
+    : clamp(56 - attackFactor * 12 + defenseFactor * 5, 44, 62);
 
-  // CM (Central offensiv mitt - slot 4)
-  const cmX = clamp(50 + side * 19, 28, 72);
+  const cmX = clamp(50 + side * 18, 28, 72);
   const cmY = isBuildUp
     ? 40
+    : possession === "opponent"
+    ? clamp(by + 12, 30, 48)
     : clamp(36 - attackFactor * 14 + defenseFactor * 11, 21, 48);
 
-  // VM (Vänstermitt - slot 2)
   const vmX = isBuildUp
     ? 10
     : leftFactor >= 0.15
-    ? clamp(lerp(18, 13, leftFactor), 11, 22)
+    ? clamp(lerp(18, 14, leftFactor), 12, 22)
     : clamp(18 + rightFactor * 14, 18, 34);
   const vmY = isBuildUp
     ? 46
+    : possession === "opponent"
+    ? leftFactor >= 0.15
+      ? clamp(by + 5, 24, 54)
+      : clamp(36 + defenseFactor * 18, 34, 55)
     : leftFactor >= 0.15
     ? clamp(lerp(36, by, 0.72), 18, 54)
     : clamp(36 - attackFactor * 14 + defenseFactor * 18, 21, 55);
 
-  // HM (Högermitt - slot 5)
   const hmX = isBuildUp
     ? 90
     : rightFactor >= 0.15
-    ? clamp(lerp(82, 87, rightFactor), 78, 89)
+    ? clamp(lerp(82, 86, rightFactor), 78, 88)
     : clamp(82 - leftFactor * 14, 66, 82);
   const hmY = isBuildUp
     ? 46
+    : possession === "opponent"
+    ? rightFactor >= 0.15
+      ? clamp(by + 5, 24, 54)
+      : clamp(36 + defenseFactor * 18, 34, 55)
     : rightFactor >= 0.15
     ? clamp(lerp(36, by, 0.72), 18, 54)
     : clamp(36 - attackFactor * 14 + defenseFactor * 18, 21, 55);
 
-  // FW (Spets - slot 6)
-  const fwX = clamp(50 + side * 14, 34, 66);
+  const fwX = clamp(50 + side * 15, 32, 68);
   const fwY = isBuildUp
     ? 20
+    : possession === "opponent"
+    ? clamp(by + 4, 18, 32)
     : clamp(16 - attackFactor * 4 + defenseFactor * 12, 12, 30);
 
   const updatedMoves1131: SlotMove[] = [
@@ -1498,12 +1808,12 @@ function computeBallDrivenScenario(
       toX: Math.round(vmX * 10) / 10,
       toY: Math.round(vmY * 10) / 10,
       actionBadge:
-        leftFactor > 0.25
-          ? by < 40
-            ? "DRIVER VÄNSTER ⚽"
-            : "PRESSAR VÄNSTER"
-          : defenseFactor > 0.25
-          ? "JOBBAR HEM!"
+        possession === "opponent"
+          ? leftFactor > 0.2
+            ? "1:a PRESS VÄNSTER!"
+            : "TÄCKER VÄNSTER"
+          : leftFactor > 0.25
+          ? "DRIVER VÄNSTER ⚽"
           : "FYLLER PÅ",
     },
     {
@@ -1511,59 +1821,65 @@ function computeBallDrivenScenario(
       toX: Math.round(dmX * 10) / 10,
       toY: Math.round(dmY * 10) / 10,
       actionBadge:
-        attackFactor > 0.3
-          ? "ANKARE · SÄKRAR"
-          : "STOPPAR FRAMFÖR LIB",
+        possession === "opponent"
+          ? "ANKARE · LÅSER MITTEN"
+          : "ANKARE · SÄKRAR",
     },
     {
       ...baseMoves[4],
       toX: Math.round(cmX * 10) / 10,
       toY: Math.round(cmY * 10) / 10,
       actionBadge:
-        attackFactor > 0.3 ? "DRIVER & SKJUTER" : "PRESSAR I MITTEN",
+        possession === "opponent" ? "PRESSAR I MITTEN" : "DRIVER & SKJUTER",
     },
     {
       ...baseMoves[5],
       toX: Math.round(hmX * 10) / 10,
       toY: Math.round(hmY * 10) / 10,
       actionBadge:
-        rightFactor > 0.25
-          ? by < 40
-            ? "DRIVER HÖGER ⚽"
-            : "PRESSAR HÖGER"
-          : defenseFactor > 0.25
-          ? "JOBBAR HEM!"
+        possession === "opponent"
+          ? rightFactor > 0.2
+            ? "1:a PRESS HÖGER!"
+            : "TÄCKER HÖGER"
+          : rightFactor > 0.25
+          ? "DRIVER HÖGER ⚽"
           : "FYLLER PÅ",
     },
     {
       ...baseMoves[6],
       toX: Math.round(fwX * 10) / 10,
       toY: Math.round(fwY * 10) / 10,
-      actionBadge: attackFactor > 0.35 ? "I STRAFFOMRÅDET!" : "HOTAR I DJUPET",
+      actionBadge:
+        possession === "opponent"
+          ? "STYR UT MOT KANT!"
+          : attackFactor > 0.35
+          ? "I STRAFFOMRÅDET!"
+          : "HOTAR I DJUPET",
     },
   ];
 
   return {
     ...baseScenario,
     id: "live_ball",
-    badge: "🖐️ BOLLSTYRD RÖRELSE (LIVE)",
+    badge:
+      possession === "opponent"
+        ? "🛡️ DE HAR BOLLEN (LIVE PRESS)"
+        : "⚽ VI HAR BOLLEN (LIVE RÖRELSE)",
     title:
-      leftFactor > 0.25
-        ? "⬅️ Bollen till Vänster i 1-1-3-1 · DM & LIB skjuter över och täcker!"
-        : rightFactor > 0.25
-        ? "➡️ Bollen till Höger i 1-1-3-1 · DM & LIB skjuter över och täcker!"
-        : by < 36
-        ? "⚡ Anfall i 1-1-3-1 · VM–CM–HM fyller på, Ankaret (DM) säkrar bakom!"
-        : "🛡️ Försvar & Balans i 1-1-3-1 · DM bromsar framför LIB",
+      possession === "opponent"
+        ? isOpponentHighUp
+          ? "🦅 Hög Press i 1-1-3-1 · FW styr ut, VM–CM–HM låser & DM säkrar!"
+          : "🛡️ Försvar i 1-1-3-1 · DM bromsar framför LIB & yttrarna jobbar hem"
+        : "⚡ Anfall & Rörelse i 1-1-3-1 · DM säkrar bakom trean",
     summary:
-      "Dra bollen ⚽ fritt över planen! Ankaret (DM) och Backen (LIB) flyttar med i sidled i sitt gröna gummiband medan VM–CM–HM arbetar framåt och hemåt.",
+      "Dra bollen ⚽ eller slå på 'Frigör gubbar' om du vill dra runt spelarna helt fritt med fingret!",
     ballX: bx,
     ballY: by,
     moves: updatedMoves1131,
   };
 }
 
-// Auto-play rutt (Uppspel -> Vänsterkant -> Spelvändning -> Högerkant -> Avslut -> Försvar)
+// Auto-play rutt
 const AUTO_PLAY_WAYPOINTS: Array<{ x: number; y: number }> = [
   { x: 50, y: 84 }, // Uppspel MV
   { x: 32, y: 58 }, // Uppspel via IMV/DM
@@ -1595,6 +1911,9 @@ export function TacticalMovementView({
   );
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(3);
 
+  // Vem har bollen när vi drar den? ("us" = Vi anfaller, "opponent" = De har bollen / Vi pressar & försvarar)
+  const [possessionMode, setPossessionMode] = useState<PossessionMode>("us");
+
   // Fri bollposition när man drar bollen eller trycker på planen
   const [customBall, setCustomBall] = useState<{ x: number; y: number } | null>(
     null
@@ -1602,14 +1921,28 @@ export function TacticalMovementView({
   const [isDraggingBall, setIsDraggingBall] = useState<boolean>(false);
   const [isAutoPlaying, setIsAutoPlaying] = useState<boolean>(false);
 
-  const pitchRef = useRef<HTMLDivElement | null>(null);
+  // Frigör gubbar-läge + manuellt flyttade spelare
+  const [isFreeMoveUnlocked, setIsFreeMoveUnlocked] = useState<boolean>(false);
+  const [manualPlayerCoords, setManualPlayerCoords] = useState<
+    Record<number, { x: number; y: number }>
+  >({});
+  const [draggingPlayerSlot, setDraggingPlayerSlot] = useState<number | null>(
+    null
+  );
 
-  // Auto-play loop som flyttar bollen mjukt längs banan så gubbarna rör sig i takt
+  const pitchRef = useRef<HTMLDivElement | null>(null);
+  const dragStartScreenRef = useRef<{ x: number; y: number; moved: boolean }>({
+    x: 0,
+    y: 0,
+    moved: false,
+  });
+
+  // Auto-play loop
   useEffect(() => {
     if (!isAutoPlaying) return;
     let animationFrameId: number;
     const startTime = performance.now();
-    const segmentDurationMs = 1900; // 1.9 sek per passning/rörelse
+    const segmentDurationMs = 1900;
 
     const tick = (now: number) => {
       const elapsed = now - startTime;
@@ -1618,7 +1951,6 @@ export function TacticalMovementView({
       const idx = Math.floor(floatIdx);
       const nextIdx = (idx + 1) % totalSegments;
       const rawT = floatIdx - idx;
-      // Smoothstep-kurva så bollen bromsar mjukt vid varje station
       const smoothT = rawT * rawT * (3 - 2 * rawT);
 
       const fromWp = AUTO_PLAY_WAYPOINTS[idx];
@@ -1642,17 +1974,40 @@ export function TacticalMovementView({
     );
   }, [scenarios, selectedScenarioId]);
 
-  const activeScenario = useMemo(() => {
+  const computedScenario = useMemo(() => {
     if (!customBall) return presetScenario;
     return computeBallDrivenScenario(
       boardFormation,
       customBall.x,
       customBall.y,
+      possessionMode,
       scenarios[0]
     );
-  }, [boardFormation, customBall, presetScenario, scenarios]);
+  }, [boardFormation, customBall, possessionMode, presetScenario, scenarios]);
 
-  // Hitta den utespelare som är närmast bollen just nu (för visuell passnings-/presslinje)
+  // Kombinera automatiska positioner med eventuella manuellt flyttade spelare
+  const activeScenario = useMemo<TacticalScenario>(() => {
+    const manualKeys = Object.keys(manualPlayerCoords);
+    if (manualKeys.length === 0) return computedScenario;
+    return {
+      ...computedScenario,
+      badge: isFreeMoveUnlocked
+        ? "🔓 FRI TAKTIKTAVLA (FLYTTA GUBBAR & BOLL)"
+        : computedScenario.badge,
+      moves: computedScenario.moves.map((m) => {
+        const manual = manualPlayerCoords[m.slotIndex];
+        if (!manual) return m;
+        return {
+          ...m,
+          toX: manual.x,
+          toY: manual.y,
+          actionBadge: isFreeMoveUnlocked ? "🖐️ FRI PLATS" : "📌 EGEN PLATS",
+        };
+      }),
+    };
+  }, [computedScenario, manualPlayerCoords, isFreeMoveUnlocked]);
+
+  // Hitta den utespelare som är närmast bollen just nu
   const closestSlotToBall = useMemo(() => {
     let bestSlot = 2;
     let bestDist = 999;
@@ -1707,23 +2062,102 @@ export function TacticalMovementView({
     onSelectFormation(fmt);
     setIsAutoPlaying(false);
     setCustomBall(null);
+    setManualPlayerCoords({});
+    setIsFreeMoveUnlocked(false);
     const nextList = fmt === "1-1-3-1" ? SCENARIOS_1_1_3_1 : SCENARIOS_1_4_1;
     setSelectedScenarioId(nextList[1]?.id ?? nextList[0].id);
   }
 
-  function updateBallFromPointerEvent(e: React.PointerEvent<HTMLDivElement>) {
+  function handleToggleFreeMoveMode() {
+    setIsAutoPlaying(false);
+    if (!isFreeMoveUnlocked) {
+      // Lås fast nuvarande positioner som startpunkt så man kan flytta varje gubbe fritt
+      const snapshot: Record<number, { x: number; y: number }> = {};
+      activeScenario.moves.forEach((m) => {
+        snapshot[m.slotIndex] = { x: m.toX, y: m.toY };
+      });
+      if (!customBall) {
+        setCustomBall({ x: activeScenario.ballX, y: activeScenario.ballY });
+      }
+      setManualPlayerCoords(snapshot);
+      setIsFreeMoveUnlocked(true);
+    } else {
+      // Koppla tillbaka gubbarna till lagrörelsen
+      setManualPlayerCoords({});
+      setIsFreeMoveUnlocked(false);
+    }
+  }
+
+  function getPitchPercentCoords(clientX: number, clientY: number) {
     const rect = pitchRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0 || rect.height <= 0) return;
-    const relX = ((e.clientX - rect.left) / rect.width) * 100;
-    const relY = ((e.clientY - rect.top) / rect.height) * 100;
-    setCustomBall({
-      x: clamp(relX, 7, 93),
-      y: clamp(relY, 9, 90),
-    });
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    const relX = ((clientX - rect.left) / rect.width) * 100;
+    const relY = ((clientY - rect.top) / rect.height) * 100;
+    return {
+      x: Math.round(clamp(relX, 6, 94) * 10) / 10,
+      y: Math.round(clamp(relY, 8, 91) * 10) / 10,
+    };
+  }
+
+  function handlePlayerPointerDown(
+    slotIndex: number,
+    e: React.PointerEvent<HTMLButtonElement>
+  ) {
+    e.stopPropagation();
+    setSelectedSlotIndex(slotIndex);
+    setIsAutoPlaying(false);
+    setDraggingPlayerSlot(slotIndex);
+    dragStartScreenRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      moved: false,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+  }
+
+  function handlePlayerPointerMove(
+    slotIndex: number,
+    e: React.PointerEvent<HTMLButtonElement>
+  ) {
+    if (draggingPlayerSlot !== slotIndex) return;
+    e.stopPropagation();
+    const distPx = Math.hypot(
+      e.clientX - dragStartScreenRef.current.x,
+      e.clientY - dragStartScreenRef.current.y
+    );
+    if (!dragStartScreenRef.current.moved && distPx < 5) {
+      return;
+    }
+    dragStartScreenRef.current.moved = true;
+    const coords = getPitchPercentCoords(e.clientX, e.clientY);
+    if (!coords) return;
+    setManualPlayerCoords((prev) => ({
+      ...prev,
+      [slotIndex]: coords,
+    }));
+  }
+
+  function handlePlayerPointerUp(
+    slotIndex: number,
+    e: React.PointerEvent<HTMLButtonElement>
+  ) {
+    if (draggingPlayerSlot !== slotIndex) return;
+    e.stopPropagation();
+    setDraggingPlayerSlot(null);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore
+    }
   }
 
   function handlePitchPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    // Ignorera om man klickade på en spelarknapp
     const target = e.target as HTMLElement;
     if (target.closest("[data-player-token='true']")) {
       return;
@@ -1733,14 +2167,16 @@ export function TacticalMovementView({
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
-      // Fallback om pointerCapture inte stöds
+      // Ignore
     }
-    updateBallFromPointerEvent(e);
+    const coords = getPitchPercentCoords(e.clientX, e.clientY);
+    if (coords) setCustomBall(coords);
   }
 
   function handlePitchPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!isDraggingBall) return;
-    updateBallFromPointerEvent(e);
+    const coords = getPitchPercentCoords(e.clientX, e.clientY);
+    if (coords) setCustomBall(coords);
   }
 
   function handlePitchPointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -1755,8 +2191,9 @@ export function TacticalMovementView({
     }
   }
 
-  // Snabb transition vid drag/autoplay så det aldrig laggar eller buggar
-  const isLiveContinuous = isDraggingBall || isAutoPlaying;
+  const hasManualPlayers = Object.keys(manualPlayerCoords).length > 0;
+  const isLiveContinuous =
+    isDraggingBall || isAutoPlaying || draggingPlayerSlot !== null;
 
   return (
     <div className="space-y-3 pb-8">
@@ -1768,13 +2205,14 @@ export function TacticalMovementView({
           <div>
             <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[10px] uppercase tracking-wider">
               <Compass className="w-3.5 h-3.5" />
-              <span>Interaktiv Rörelse- & Taktiktavla · Dra bollen fritt!</span>
+              <span>Interaktiv Rörelse- & Taktiktavla · Dra boll & gubbar!</span>
             </div>
             <h2 className="font-display font-extrabold text-lg sm:text-xl uppercase text-white mt-1">
               Hur vi springer i {boardFormation} (KAIK-matchen)
             </h2>
             <p className="text-xs text-sky-100/90">
-              <strong>Nytt:</strong> Dra bollen ⚽ med fingret (eller tryck var du vill på gräset) så rör sig alla gubbarna direkt i takt med bollen!
+              Dra <strong>bollen ⚽</strong> så rör sig hela laget i takt — eller tryck på{" "}
+              <strong>🔓 Frigör gubbar</strong> (eller dra direkt i valfri spelare!) för att ställa upp dem exakt som du vill visa!
             </p>
           </div>
         </div>
@@ -1844,64 +2282,147 @@ export function TacticalMovementView({
           </button>
         </div>
 
-        {/* Scenario-knappar + Auto-play boll */}
-        <div className="pt-1 space-y-2">
+        {/* VEM HAR BOLLEN + FRIGÖR GUBBAR-VERKTYGSRAD */}
+        <div className="p-2.5 rounded-xl bg-[#050e1d] border border-sky-400/30 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] font-mono-cm font-extrabold uppercase text-[#facc15]">
-              Välj fast spelsituation eller dra bollen ⚽ fritt på planen:
-            </div>
-            <div className="flex items-center gap-1.5">
+            {/* Växla mellan Vi har bollen vs Motståndaren har bollen */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-mono-cm font-extrabold uppercase text-sky-200 mr-1">
+                När du drar bollen:
+              </span>
               <button
                 type="button"
-                onClick={() => setIsAutoPlaying((prev) => !prev)}
+                onClick={() => {
+                  setPossessionMode("us");
+                  if (!customBall) {
+                    setCustomBall({
+                      x: activeScenario.ballX,
+                      y: activeScenario.ballY,
+                    });
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg font-display font-extrabold text-xs uppercase border transition ${
+                  possessionMode === "us"
+                    ? "bg-emerald-400 text-slate-950 border-emerald-200 shadow"
+                    : "bg-[#061224] text-slate-300 border-white/15 hover:text-white"
+                }`}
+              >
+                ⚽ Vi har bollen (Anfall)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPossessionMode("opponent");
+                  if (!customBall) {
+                    setCustomBall({
+                      x: activeScenario.ballX,
+                      y: activeScenario.ballY,
+                    });
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg font-display font-extrabold text-xs uppercase border transition ${
+                  possessionMode === "opponent"
+                    ? "bg-amber-400 text-slate-950 border-amber-200 shadow"
+                    : "bg-[#061224] text-slate-300 border-white/15 hover:text-white"
+                }`}
+              >
+                🛡️ Motståndaren har bollen (Press / Försvar)
+              </button>
+            </div>
+
+            {/* Knapp: Frigör gubbar + Autokör + Återställ */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={handleToggleFreeMoveMode}
+                className={`px-3 py-1 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border flex items-center gap-1.5 transition active:scale-95 ${
+                  isFreeMoveUnlocked
+                    ? "bg-[#facc15] text-slate-950 border-yellow-200 shadow-[0_0_15px_rgba(250,204,21,0.5)]"
+                    : "bg-[#0f2547] text-[#facc15] border-[#facc15]/50 hover:bg-[#163463]"
+                }`}
+              >
+                {isFreeMoveUnlocked ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Lås till lagrörelse</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>Frigör gubbar (Flytta fritt)</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFreeMoveUnlocked(false);
+                  setManualPlayerCoords({});
+                  setIsAutoPlaying((prev) => !prev);
+                }}
                 className={`px-2.5 py-1 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border flex items-center gap-1.5 transition active:scale-95 ${
                   isAutoPlaying
                     ? "bg-emerald-400 text-slate-950 border-emerald-200 shadow-[0_0_15px_rgba(52,211,153,0.5)]"
-                    : "bg-[#0f2547] text-emerald-300 border-emerald-400/40 hover:bg-emerald-950/60"
+                    : "bg-[#061224] text-emerald-300 border-emerald-400/40 hover:bg-emerald-950/60"
                 }`}
               >
                 {isAutoPlaying ? (
                   <>
                     <Pause className="w-3.5 h-3.5" />
-                    <span>Pausa bollrörelse</span>
+                    <span>Pausa</span>
                   </>
                 ) : (
                   <>
                     <Play className="w-3.5 h-3.5" />
-                    <span>Autokör bollen ⚽</span>
+                    <span>Autokör ⚽</span>
                   </>
                 )}
               </button>
 
-              {customBall && (
+              {(customBall || hasManualPlayers) && (
                 <button
                   type="button"
                   onClick={() => {
                     setIsAutoPlaying(false);
+                    setIsFreeMoveUnlocked(false);
+                    setManualPlayerCoords({});
                     setCustomBall(null);
                   }}
                   className="px-2.5 py-1 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border bg-[#061224] text-sky-200 border-sky-400/30 hover:bg-[#0f2547] flex items-center gap-1"
                 >
                   <RotateCcw className="w-3 h-3" />
-                  <span>Återställ läge</span>
+                  <span>Återställ</span>
                 </button>
               )}
             </div>
           </div>
+        </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+        {/* Färdiga Scenario-knappar */}
+        <div className="pt-0.5 space-y-1.5">
+          <div className="text-[11px] font-mono-cm font-extrabold uppercase text-[#facc15]">
+            Eller hoppa direkt till en färdig spelsituation:
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
             {scenarios.map((scen) => {
-              const active = !customBall && scen.id === presetScenario.id;
+              const active =
+                !customBall && !hasManualPlayers && scen.id === presetScenario.id;
               return (
                 <button
                   key={scen.id}
                   type="button"
                   onClick={() => {
                     setIsAutoPlaying(false);
+                    setIsFreeMoveUnlocked(false);
+                    setManualPlayerCoords({});
                     setCustomBall(null);
                     setSelectedScenarioId(scen.id);
+                    if (scen.defaultPossession) {
+                      setPossessionMode(scen.defaultPossession);
+                    }
                   }}
-                  className={`py-2 px-2.5 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border transition text-center active:scale-95 ${
+                  className={`py-2 px-2 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border transition text-center active:scale-95 ${
                     active
                       ? "bg-[#facc15] text-slate-950 border-yellow-200 shadow-[0_0_15px_rgba(250,204,21,0.35)]"
                       : "bg-[#061224] text-sky-200 border-sky-400/30 hover:bg-[#0f2547]"
@@ -1916,7 +2437,7 @@ export function TacticalMovementView({
       </section>
 
       {/* ============================================================
-          ANIMERAD 2D TAKTIKPLAN MED BOLL-DRAGNING & RIKTIGA NAMN
+          ANIMERAD 2D TAKTIKPLAN MED BOLL- OCH SPELARDRAGNING
          ============================================================ */}
       <section className="rounded-xl overflow-hidden border-2 border-white/25 shadow-2xl bg-[#061224]">
         {/* Scenario-header */}
@@ -1925,7 +2446,11 @@ export function TacticalMovementView({
             <div className="flex items-center gap-2 flex-wrap">
               <span
                 className={`px-2 py-0.5 rounded font-mono-cm font-extrabold text-[10px] uppercase ${
-                  customBall
+                  isFreeMoveUnlocked
+                    ? "bg-[#facc15] text-slate-950"
+                    : possessionMode === "opponent" && customBall
+                    ? "bg-amber-400 text-slate-950"
+                    : customBall
                     ? "bg-emerald-400 text-slate-950"
                     : "bg-[#facc15] text-slate-950"
                 }`}
@@ -1948,16 +2473,20 @@ export function TacticalMovementView({
           <span>HUVUDREGEL: {activeScenario.coachKeyPoint}</span>
         </div>
 
-        {/* Riktningsindikator + Dra-bollen-instruktion */}
+        {/* Riktningsindikator + Instruktion */}
         <div className="bg-[#14532d] px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono-cm font-bold uppercase text-emerald-100 border-b border-black/25">
           <span>⬆️ ANFALLSRIKTNING (MOT KAIK:S MÅL)</span>
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-black/50 text-[#facc15]">
             <Hand className="w-3 h-3" />
-            <span>PEKA ELLER DRA BOLLEN ⚽ PÅ GRÄSET SÅ FÖLJER LAGET MED!</span>
+            <span>
+              {isFreeMoveUnlocked
+                ? "FRI TAKTIKTAVLA AKTIV: DRA VALFRI GUBBE ELLER BOLLEN ⚽ FRITT!"
+                : "DRA BOLLEN ⚽ FÖR LAGRÖRELSE — ELLER DRA VALFRI GUBBE MED FINGRET!"}
+            </span>
           </span>
         </div>
 
-        {/* 2D Gräsplan med Pointer-styrning av bollen (touch-none förhindrar scroll-buggar vid drag) */}
+        {/* 2D Gräsplan */}
         <div
           ref={pitchRef}
           onPointerDown={handlePitchPointerDown}
@@ -2165,7 +2694,7 @@ export function TacticalMovementView({
             })}
           </svg>
 
-          {/* Fotbollen på planen (Draggbar med tydlig gloria) */}
+          {/* Fotbollen på planen */}
           <div
             style={{
               left: `${activeScenario.ballX}%`,
@@ -2177,8 +2706,18 @@ export function TacticalMovementView({
             className="absolute -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none"
           >
             <div className="relative flex flex-col items-center">
-              <span className="mb-0.5 px-1.5 py-[1px] rounded-full bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[8px] uppercase shadow whitespace-nowrap">
-                {isDraggingBall ? "DRAR BOLLEN" : "DRA MIG ⚽"}
+              <span
+                className={`mb-0.5 px-1.5 py-[1px] rounded-full font-mono-cm font-extrabold text-[8px] uppercase shadow whitespace-nowrap ${
+                  possessionMode === "opponent"
+                    ? "bg-amber-400 text-slate-950"
+                    : "bg-[#facc15] text-slate-950"
+                }`}
+              >
+                {isDraggingBall
+                  ? "DRAR BOLLEN"
+                  : possessionMode === "opponent"
+                  ? "DE HAR BOLLEN ⚽"
+                  : "DRA MIG ⚽"}
               </span>
               <div
                 className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white text-slate-950 border-2 border-[#facc15] shadow-[0_0_18px_rgba(250,204,21,0.95)] flex items-center justify-center text-base transition-transform ${
@@ -2190,12 +2729,13 @@ export function TacticalMovementView({
             </div>
           </div>
 
-          {/* Spelare på planen (rör sig mjukt och direkt i takt med bollen) */}
+          {/* Spelare på planen (kan både följa bollen automatiskt OCH dras fritt med fingret!) */}
           {activeScenario.moves.map((m) => {
             const p = playerBySlot.get(m.slotIndex);
             const displayName = p?.name || m.code;
             const isSelected = m.slotIndex === selectedSlotIndex;
             const isClosest = m.slotIndex === closestSlotToBall;
+            const isDraggingThisPlayer = draggingPlayerSlot === m.slotIndex;
 
             const badgeBg =
               m.zoneColor === "yellow"
@@ -2221,19 +2761,29 @@ export function TacticalMovementView({
                 style={{
                   left: `${m.toX}%`,
                   top: `${m.toY}%`,
-                  transition: isLiveContinuous
+                  transition: isDraggingThisPlayer
+                    ? "none"
+                    : isLiveContinuous
                     ? "left 95ms linear, top 95ms linear"
                     : "left 380ms cubic-bezier(0.22, 1, 0.36, 1), top 380ms cubic-bezier(0.22, 1, 0.36, 1)",
                 }}
-                className="absolute -translate-x-1/2 -translate-y-1/2 z-20"
+                className={`absolute -translate-x-1/2 -translate-y-1/2 ${
+                  isDraggingThisPlayer ? "z-40" : "z-20"
+                }`}
               >
                 <button
                   type="button"
                   data-player-token="true"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => setSelectedSlotIndex(m.slotIndex)}
-                  className={`relative flex flex-col items-center focus:outline-none transition-transform ${
-                    isSelected ? "scale-110 z-30" : "hover:scale-105"
+                  onPointerDown={(e) => handlePlayerPointerDown(m.slotIndex, e)}
+                  onPointerMove={(e) => handlePlayerPointerMove(m.slotIndex, e)}
+                  onPointerUp={(e) => handlePlayerPointerUp(m.slotIndex, e)}
+                  onPointerCancel={(e) => handlePlayerPointerUp(m.slotIndex, e)}
+                  className={`relative flex flex-col items-center focus:outline-none touch-none cursor-grab active:cursor-grabbing transition-transform ${
+                    isDraggingThisPlayer
+                      ? "scale-125"
+                      : isSelected
+                      ? "scale-110 z-30"
+                      : "hover:scale-105"
                   }`}
                 >
                   {/* Uppgifts-etikett ovanför spelaren */}
@@ -2246,6 +2796,10 @@ export function TacticalMovementView({
                   {/* Spelarcirkel med positionskod */}
                   <div
                     className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 flex flex-col items-center justify-center shadow-lg ${circleBg} ${
+                      isFreeMoveUnlocked
+                        ? "ring-2 ring-dashed ring-[#facc15]"
+                        : ""
+                    } ${
                       isSelected
                         ? "ring-4 ring-[#facc15]/80 shadow-[0_0_20px_rgba(250,204,21,0.7)]"
                         : isClosest
@@ -2372,15 +2926,15 @@ export function TacticalMovementView({
                 2. En går fram → En säkrar bakom
               </div>
               <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                Om yttern springer hela vägen fram i anfall stannar innermittfältaren snett bakom på samma sida — <strong>lagom långt bak</strong> (inte i knät på backen).
+                Om yttern springer hela vägen fram i anfall (eller kliver i hög press) stannar innermittfältaren snett bakom på samma sida — <strong>lagom långt bak</strong> (inte i knät på backen).
               </p>
             </div>
             <div className="p-3 rounded-lg bg-[#050e1d] border border-emerald-400/40">
               <div className="font-display font-extrabold text-xs uppercase text-emerald-300">
-                3. Bortre yttern in i boxen
+                3. Bortre yttern in i boxen / stänger mitten
               </div>
               <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                Anfaller vi på vänsterkanten? Då smyger högeryttern in framför mål vid bortre stolpen för att trycka in inspelet!
+                Anfaller vi på vänsterkanten smyger högeryttern in på bortre stolpen. Har motståndaren bollen där kliver bortre yttern in och bevakar spelvändning!
               </p>
             </div>
           </div>

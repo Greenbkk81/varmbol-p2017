@@ -1,10 +1,26 @@
 # HANDOVER · Värmbols FC P2017 & Multi-Lag Matchcoach
 
-**Senast uppdaterad:** 2026-11-04
+**Senast uppdaterad:** 2026-11-11
 **Produktions-URL:** `https://varmbol-p2017.vercel.app/` (även kopplad mot `varmbol.com` i Vercel-projektet `varmbol-p2017` / `prj_Bv02X5qSZQnCx78gMy3r2A9bz2Rd`)
 **GitHub-repo:** `Greenbkk81/varmbol-p2017` (`main`)
 
 ---
+
+## 0. Senaste uppdatering (2026-11-11 · Träningsmatch mot KAIK)
+
+1. **Två uppställningar redo för matchen mot Katrineholms AIK (KAIK):**
+   - **`1-4-1` (Lars – Sidopar Vänster & Höger):**
+     - **Vänsterparet (`VM` + `IMV`/CM Vänster)** ansvarar för hela vänstersidan ihop. Går vänsteryttern fram i anfall täcker CM Vänster upp lite bakåt på kanten (utan att falla ner i knät på backen).
+     - **Högerparet (`HM` + `IMH`/CM Höger)** ansvarar för hela högersidan ihop på samma sätt.
+     - Visuella sidopar-zoner utritade direkt på 2D-planen och i **📋 Samling**-modalen (som visar namnen på de två spelare som startar i respektive sidopar).
+   - **`1-1-3-1` (Jocke – Back + Ankare + 3 Mitt + Spets):**
+     - Tillagd som ny 7v7-uppställning (`MV` + `LIB` Back + `DM` Defensiv mitt/Ankare + `VM`/`CM`/`HM` + `FW` Spets).
+     - Går att skifta mellan `1-4-1` och `1-1-3-1` med ett tryck både inför och mitt under pågående match.
+2. **Inlånade spelare från P2018:**
+   - **Jack** (`p-jack`) och **Amr** (`p-amr`) är inlagda i `DEFAULT_ROSTER` och i live-truppen i Vercel Blob.
+3. **Omställd Speltidsrapport (`Speltid & Mål`):**
+   - Rapporten visar nu både varje exakt position (`VM`, `IMV`, `DM`, `CM`, `HM`, `LIB`, `FW`) och summerad tid i **Vänsterpar (`VM+IMV`)**, **Högerpar (`HM+IMH`)** samt **Centralt/Spets (`LIB/DM/CM/FW`)**, plus en översikt över formationsskiften och vilket spelsystem varje mål gjordes i.
+   - Gamla cupmatcher från 25 okt är arkiverade till `backups/cup-2026-10-25-snapshot.json` och bortrensade ur dagens live-rapport så KAIK-matchen startar rent på `0:00`.
 
 ## 1. Var vi är just nu (Status)
 

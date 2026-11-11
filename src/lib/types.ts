@@ -1,6 +1,6 @@
 export type MatchFormat = "7v7" | "5v5";
 
-export type Formation7v7 = "1-4-1" | "2-3-1" | "2-2-2" | "3-2-1";
+export type Formation7v7 = "1-4-1" | "1-1-3-1" | "2-3-1" | "2-2-2" | "3-2-1";
 export type Formation5v5 = "1-2-1" | "2-2";
 export type TacticalFormation = Formation7v7 | Formation5v5;
 
@@ -62,6 +62,7 @@ export interface GoalRecord {
   period: number;
   /** Total matchtid från avspark, millisekunder. */
   matchTimeMs: number;
+  formation?: TacticalFormation;
   scorerId?: string;
   scorerName?: string;
   scorerPosition?: string;

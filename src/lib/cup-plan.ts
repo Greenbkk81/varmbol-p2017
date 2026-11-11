@@ -21,11 +21,48 @@ export const CUP_MATCHES: CupMatch[] = [
 ];
 
 export const CUP_COACH_NOTES = [
-  { role: "Wings", text: "Tänk anfall och försvar. Viktigt med hemjobb." },
-  { role: "Centralt mittfält", text: "Stoppa kontringar så att wings hinner hem. Fördela bollar till wings och anfall." },
-  { role: "Back", text: "Styr spelet. Ropa och prata om var motståndarna finns. Fördela bollen till centralt mittfält." },
-  { role: "Alla", text: "Positivt snack!" },
+  {
+    role: "Vänsterparet (VM + CM Vänster)",
+    text: "Kämpa ihop om hela vänstersidan! Går vänsteryttern (VM) fram tar CM Vänster (IMV) ansvar lite bakåt på vänstersidan (inte ända ner i knät på backen) så kanten aldrig lämnas öppen.",
+  },
+  {
+    role: "Högerparet (HM + CM Höger)",
+    text: "Kämpa ihop om hela högersidan! Går högeryttern (HM) fram säkrar CM Höger (IMH) upp bakåt på högersidan så vi alltid är två som tar ansvar.",
+  },
+  {
+    role: "Back & Ankare",
+    text: "Styr spelet bakifrån. Ropa och prata om var motståndarna finns och spela ut till våra sidopar.",
+  },
+  {
+    role: "Alla",
+    text: "Positivt snack och hjälpa varandra två och två!",
+  },
 ];
+
+export const FORMATION_COACH_NOTES: Record<
+  string,
+  { role: string; text: string }[]
+> = {
+  "1-4-1": CUP_COACH_NOTES,
+  "1-1-3-1": [
+    {
+      role: "Back (LIB) + Ankare (DM)",
+      text: "En sista back och en defensiv mittfältare (DM) strax framför som stänger mitten och stoppar kontringar tidigt.",
+    },
+    {
+      role: "Yttrar (VM & HM)",
+      text: "Håll bredden i anfall och jobba hem längs kanten i försvar så DM och backen får hjälp.",
+    },
+    {
+      role: "Central mitt (CM) & Forward (FW)",
+      text: "Länka ihop spelet framåt, vänd upp och fyll på i straffområdet tillsammans.",
+    },
+    {
+      role: "Alla",
+      text: "Positivt snack och tydliga roller när vi byter mellan 1-4-1 och 1-1-3-1!",
+    },
+  ],
+};
 
 export function buildCupSetup(match: CupMatch, existingRoster: RosterPlayer[]) {
   const merged = [...existingRoster];

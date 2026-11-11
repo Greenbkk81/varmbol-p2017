@@ -37,8 +37,8 @@ const SECTIONS: { title: string; body: string }[] = [
     body: "Speltid är total tid på plan i matchen. Inne nu är den pågående perioden på plan eller på bänken. Bänk är samlad bänktid. Färgen följer konditionen: grönt är fräscht, gult börjar ta, rött betyder att det är dags att titta på ett byte.",
   },
   {
-    title: "Formation",
-    body: "1-4-1 är grunduppställningen i sjumannafotboll: målvakt, libero, fyrbackslinje på mitten och en spets. 2-3-1, 2-2-2 och 3-2-1 flyttar samma sju spelare. I femmanna finns 1-2-1 och 2-2. Tiden sparas på den plats spelaren stod just då, så ett byte av formation delar upp minuterna.",
+    title: "Formationer: 1-4-1 (Sidopar) & 1-1-3-1",
+    body: "I 1-4-1 jobbar mittfältet i två tydliga sidopar: Vänsterparet (VM + IMV/CM-V) har ansvar för vänstersidan tillsammans och Högerparet (HM + IMH/CM-H) har ansvar för högersidan tillsammans. Går yttern fram i anfall tar den inre mittfältaren lite ansvar bakåt på samma kant så att vi aldrig lämnar kanten öppen. I 1-1-3-1 (Jockes) har vi en back (LIB), ett defensivt ankare (DM) framför backen, tre mittfältare (VM, CM, HM) och en spets (FW). Byter ni formation under matchen delas minuterna upp automatiskt på varje plats och sidopar.",
   },
   {
     title: "Mål och pass",

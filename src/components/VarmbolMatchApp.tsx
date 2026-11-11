@@ -35,7 +35,14 @@ import {
   PresetEvent,
   QUICK_OPPONENTS,
 } from "@/lib/default-roster";
-import { buildCupSetup, CUP_COACH_NOTES, CUP_MATCHES, INITIAL_CUP_SETUP, upgradeCupDuration } from "@/lib/cup-plan";
+import {
+  buildCupSetup,
+  CUP_COACH_NOTES,
+  CUP_MATCHES,
+  FORMATION_COACH_NOTES,
+  INITIAL_CUP_SETUP,
+  upgradeCupDuration,
+} from "@/lib/cup-plan";
 import {
   addOpponentGoal,
   addOurGoal,
@@ -62,7 +69,7 @@ import {
 import { mergeCupRows } from "@/lib/cup-totals";
 import { playSound, resumeSound, SoundCue } from "@/lib/sounds";
 import { GuideView } from "./GuideView";
-import { PositionTime } from "./PositionTime";
+import { PositionTime, summarizeRoleZones } from "./PositionTime";
 import {
   AuthRole,
   ComputedPlayerMetrics,
@@ -228,6 +235,44 @@ function correctFirstName(name: string) {
   return name === "Abdoulaye" ? "Abdullahi" : name;
 }
 
+function ensureVfcGuests(
+  list: RosterPlayer[],
+  isVfcDefault: boolean
+): RosterPlayer[] {
+  const normalized = list.map((p) => ({
+    ...p,
+    name: correctFirstName(p.name),
+  }));
+  if (!isVfcDefault) return normalized;
+  const guests: RosterPlayer[] = [
+    {
+      id: "p-jack",
+      name: "Jack",
+      preferredRole: "Inlånad P2018",
+      activeInSquad: true,
+    },
+    {
+      id: "p-amr",
+      name: "Amr",
+      preferredRole: "Inlånad P2018",
+      activeInSquad: true,
+    },
+  ];
+  const merged = [...normalized];
+  for (const g of guests) {
+    const exists = merged.some(
+      (p) =>
+        p.id === g.id ||
+        p.name.trim().toLocaleLowerCase("sv-SE") ===
+          g.name.toLocaleLowerCase("sv-SE")
+    );
+    if (!exists) {
+      merged.push(g);
+    }
+  }
+  return merged;
+}
+
 function ourGoals(goals: GoalRecord[] | undefined) {
   return (goals ?? []).filter((goal) => goal.side === "ours");
 }
@@ -266,8 +311,17 @@ function goalMoment(goal: GoalRecord, periodMinutes: number) {
   return `P${goal.period} ${formatDurationMmSs(intoPeriod)}`;
 }
 
+const FORMATIONS_7V7 = [
+  "1-4-1",
+  "1-1-3-1",
+  "2-3-1",
+  "2-2-2",
+  "3-2-1",
+] as const;
+
 function goalDetail(goal: GoalRecord) {
-  if (!goal.scorerPosition) return "utan plats";
+  const fmtBadge = goal.formation ? ` [${goal.formation}]` : "";
+  if (!goal.scorerPosition) return `utan plats${fmtBadge}`;
   const shot = goal.scorerName
     ? `${goal.scorerPosition} ${goal.scorerName}`
     : goal.scorerPosition;
@@ -275,9 +329,9 @@ function goalDetail(goal: GoalRecord) {
     const pass = goal.assistName
       ? `${goal.assistPosition} ${goal.assistName}`
       : goal.assistPosition;
-    return `${shot} · pass ${pass}`;
+    return `${shot} · pass ${pass}${fmtBadge}`;
   }
-  return `${shot} · ingen pass`;
+  return `${shot} · ingen pass${fmtBadge}`;
 }
 
 function openGoalLabel(goals: GoalRecord[] | undefined, goalId: string) {
@@ -426,9 +480,11 @@ export function VarmbolMatchApp({
       Array.isArray(initialRemoteSnapshot.roster) &&
       (initialRemoteSnapshot.roster.length > 0 || !isVfcDefault)
     ) {
-      return initialRemoteSnapshot.roster;
+      return ensureVfcGuests(initialRemoteSnapshot.roster, isVfcDefault);
     }
-    return isVfcDefault ? INITIAL_CUP_SETUP.roster : [];
+    return isVfcDefault
+      ? ensureVfcGuests(INITIAL_CUP_SETUP.roster, isVfcDefault)
+      : [];
   }, [initialRemoteSnapshot, isVfcDefault]);
 
   const initialConfig = useMemo<MatchConfig>(() => {
@@ -590,40 +646,52 @@ export function VarmbolMatchApp({
         }
       }
 
-      const rawRoster = localStorage.getItem(storageKeys.roster);
-      if (rawRoster) {
-        const parsed = JSON.parse(rawRoster) as RosterPlayer[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setRoster(
-            parsed.map((player) => ({
-              ...player,
-              name: correctFirstName(player.name),
-            }))
-          );
-          if (activeTab === "setup" && initialRoster.length === 0) {
-            setActiveTab("match");
+      const hasRemoteSnapshot = Boolean(
+        initialRemoteSnapshot?.matchState &&
+          initialRemoteSnapshot.matchState.players?.length > 0
+      );
+
+      if (!hasRemoteSnapshot) {
+        const rawRoster = localStorage.getItem(storageKeys.roster);
+        if (rawRoster) {
+          const parsed = JSON.parse(rawRoster) as RosterPlayer[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setRoster(ensureVfcGuests(parsed, isVfcDefault));
+            if (activeTab === "setup" && initialRoster.length === 0) {
+              setActiveTab("match");
+            }
           }
         }
-      }
 
-      const rawMatch = localStorage.getItem(storageKeys.activeMatch);
-      if (rawMatch) {
-        const parsedMatch = JSON.parse(rawMatch) as MatchState;
-        if (parsedMatch && parsedMatch.players?.length > 0) {
-          const normalized = normalizeMatchState(parsedMatch);
-          setMatchState(normalized);
-          setDraftConfig(normalized.config);
-          setSetupPitchIds(
-            normalized.players
-              .filter((p) => p.onPitch)
-              .sort((a, b) => (a.pitchSlotIndex ?? 0) - (b.pitchSlotIndex ?? 0))
-              .map((p) => p.id)
-          );
-          setSetupGkId(
-            normalized.players.find((p) => p.isGoalkeeper)?.id ??
-              initialGkId
-          );
+        const rawMatch = localStorage.getItem(storageKeys.activeMatch);
+        if (rawMatch) {
+          const parsedMatch = JSON.parse(rawMatch) as MatchState;
+          if (parsedMatch && parsedMatch.players?.length > 0) {
+            const normalized = normalizeMatchState(parsedMatch);
+            setMatchState(normalized);
+            setDraftConfig(normalized.config);
+            setSetupPitchIds(
+              normalized.players
+                .filter((p) => p.onPitch)
+                .sort((a, b) => (a.pitchSlotIndex ?? 0) - (b.pitchSlotIndex ?? 0))
+                .map((p) => p.id)
+            );
+            setSetupGkId(
+              normalized.players.find((p) => p.isGoalkeeper)?.id ??
+                initialGkId
+            );
+          }
         }
+
+        const rawHistory = localStorage.getItem(storageKeys.history);
+        if (rawHistory) {
+          const parsedHistory = JSON.parse(rawHistory) as SavedMatchSummary[];
+          if (Array.isArray(parsedHistory) && parsedHistory.length > 0) {
+            setSavedMatches(normalizeHistory(parsedHistory));
+          }
+        }
+      } else {
+        skipNextPushRef.current = true;
       }
 
       const rawSound = localStorage.getItem(storageKeys.sound);
@@ -633,14 +701,6 @@ export function VarmbolMatchApp({
       const urlFocus = new URLSearchParams(window.location.search).get("focus");
       if (urlFocus === "1" || urlFocus === "true" || rawFocus === "1") {
         setFocusMode(true);
-      }
-
-      const rawHistory = localStorage.getItem(storageKeys.history);
-      if (rawHistory) {
-        const parsedHistory = JSON.parse(rawHistory) as SavedMatchSummary[];
-        if (Array.isArray(parsedHistory) && parsedHistory.length > 0) {
-          setSavedMatches(normalizeHistory(parsedHistory));
-        }
       }
     } catch {
       // ignore
@@ -750,12 +810,7 @@ export function VarmbolMatchApp({
         setDraftConfig(normalized.config);
       }
       if (Array.isArray(snapshot.roster) && snapshot.roster.length > 0) {
-        setRoster(
-          snapshot.roster.map((player) => ({
-            ...player,
-            name: correctFirstName(player.name),
-          }))
-        );
+        setRoster(ensureVfcGuests(snapshot.roster, isVfcDefault));
       }
       if (Array.isArray(snapshot.savedMatches)) {
         setSavedMatches(normalizeHistory(snapshot.savedMatches));
@@ -1837,9 +1892,25 @@ export function VarmbolMatchApp({
     setActiveTab("match");
   }
 
+  function handleClearMatchHistory() {
+    if (isFollowing) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Vill du rensa tidigare sparade matcher ur rapporten så att endast dagens match räknas?"
+      )
+    ) {
+      return;
+    }
+    forceNextPushRef.current = true;
+    setSavedMatches([]);
+  }
+
   function buildCupSummaryText(): string {
     const lines: string[] = [];
-    lines.push(`⚽ ${teamProfile.displayName.toUpperCase()} – SAMMANFATTNING`);
+    lines.push(
+      `⚽ ${teamProfile.displayName.toUpperCase()} – MATCH- & SPELTIDSRAPPORT`
+    );
     const allMatches =
       getTotalMatchElapsedMs(matchState, now) > 5_000
         ? [
@@ -1852,16 +1923,28 @@ export function VarmbolMatchApp({
       lines.push("MATCHER:");
       for (const m of allMatches) {
         const gLine = goalHeadline(m.goals);
+        const fmtTag = m.formation ? ` [${m.formation}]` : "";
         lines.push(
           `• ${teamProfile.clubName} ${m.ourScore}–${m.opponentScore} ${
             m.opponent
-          }${gLine ? ` (${gLine})` : ""}`
+          }${fmtTag}${gLine ? ` (${gLine})` : ""}`
         );
       }
     }
+    const formationLogs = matchState.logs.filter((l) => l.type === "formation");
+    if (formationLogs.length > 0) {
+      lines.push("");
+      lines.push(
+        `UPPSTÄLLNINGSSKIFTEN: ${formationLogs
+          .map(
+            (l) => `P${l.period} ${Math.floor(l.matchTimeMs / 60000)}' (${l.note})`
+          )
+          .join(", ")}`
+      );
+    }
     if (cupRows.length > 0) {
       lines.push("");
-      lines.push("SPELTID TOTALT:");
+      lines.push("SPELTID & SIDOPAR/POSITIONER:");
       for (const r of [...cupRows].sort(
         (a, b) => b.totalPlayMs - a.totalPlayMs
       )) {
@@ -1870,12 +1953,22 @@ export function VarmbolMatchApp({
           .sort((a, b) => b[1] - a[1])
           .map(([code, ms]) => `${code} ${formatDurationMmSs(ms)}`)
           .join(", ");
+        const zones = summarizeRoleZones(r.positionMs);
+        const sideParts: string[] = [];
+        if (zones.leftSideMs >= 1000) {
+          sideParts.push(`V-sida ${formatDurationMmSs(zones.leftSideMs)}`);
+        }
+        if (zones.rightSideMs >= 1000) {
+          sideParts.push(`H-sida ${formatDurationMmSs(zones.rightSideMs)}`);
+        }
         lines.push(
           `• ${r.name}: ${formatDurationMmSs(r.totalPlayMs)}${
             r.goalkeeperMs >= 1000
               ? ` (MV ${formatDurationMmSs(r.goalkeeperMs)})`
               : ""
-          }${pos ? ` [${pos}]` : ""}`
+          }${pos ? ` [${pos}]` : ""}${
+            sideParts.length > 0 ? ` (${sideParts.join(", ")})` : ""
+          }`
         );
       }
     }
@@ -2527,13 +2620,11 @@ export function VarmbolMatchApp({
                         }
                         className="bg-[#040a14] border border-sky-400/30 rounded px-1 py-0.5 font-mono-cm font-bold text-[11px] text-white"
                       >
-                        {(["1-4-1", "2-3-1", "2-2-2", "3-2-1"] as const).map(
-                          (fmt) => (
-                            <option key={fmt} value={fmt}>
-                              {fmt}
-                            </option>
-                          )
-                        )}
+                        {FORMATIONS_7V7.map((fmt) => (
+                          <option key={fmt} value={fmt}>
+                            {fmt}
+                          </option>
+                        ))}
                       </select>
                     )}
 
@@ -2598,6 +2689,22 @@ export function VarmbolMatchApp({
                   <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/35 pointer-events-none" />
                   <div className="absolute left-1/2 -translate-x-1/2 top-2.5 w-32 sm:w-44 h-8 border-b border-x border-white/25 pointer-events-none" />
                   <div className="absolute left-1/2 -translate-x-1/2 bottom-2.5 w-36 sm:w-48 h-12 border-t border-x border-white/30 pointer-events-none" />
+
+                  {/* Visuell sidopar-koppling i 1-4-1 (VM+IMV till vänster, IMH+HM till höger) */}
+                  {currentFormation === "1-4-1" && (
+                    <>
+                      <div className="absolute left-[5%] w-[42%] top-[34%] h-[25%] rounded-2xl border border-dashed border-[#facc15]/45 bg-[#facc15]/[0.05] pointer-events-none flex items-start justify-center pt-0.5">
+                        <span className="px-1.5 py-[1px] rounded bg-black/55 text-[#facc15] font-mono-cm font-extrabold text-[8px] uppercase tracking-wider">
+                          Vänsterpar (VM+IMV)
+                        </span>
+                      </div>
+                      <div className="absolute right-[5%] w-[42%] top-[34%] h-[25%] rounded-2xl border border-dashed border-sky-300/45 bg-sky-400/[0.05] pointer-events-none flex items-start justify-center pt-0.5">
+                        <span className="px-1.5 py-[1px] rounded bg-black/55 text-sky-200 font-mono-cm font-extrabold text-[8px] uppercase tracking-wider">
+                          Högerpar (IMH+HM)
+                        </span>
+                      </div>
+                    </>
+                  )}
 
                   {pitchMetrics.map((m, idx) => {
                     const slotIdx =
@@ -3103,22 +3210,20 @@ export function VarmbolMatchApp({
               <div className="flex items-center gap-1.5">
                 {matchState.config.format === "7v7" && (
                   <div className="flex items-center bg-[#040a14] rounded p-0.5 border border-sky-400/25">
-                    {(["1-4-1", "2-3-1", "2-2-2", "3-2-1"] as const).map(
-                      (fmt) => (
-                        <button
-                          key={fmt}
-                          type="button"
-                          onClick={() => handleChangeFormation(fmt)}
-                          className={`px-2 py-0.5 rounded text-[11px] font-mono-cm font-bold transition ${
-                            currentFormation === fmt
-                              ? "bg-[#005cb9] text-white"
-                              : "text-slate-400 hover:text-white"
-                          }`}
-                        >
-                          {fmt}
-                        </button>
-                      )
-                    )}
+                    {FORMATIONS_7V7.map((fmt) => (
+                      <button
+                        key={fmt}
+                        type="button"
+                        onClick={() => handleChangeFormation(fmt)}
+                        className={`px-2 py-0.5 rounded text-[11px] font-mono-cm font-bold transition ${
+                          currentFormation === fmt
+                            ? "bg-[#005cb9] text-white"
+                            : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {fmt}
+                      </button>
+                    ))}
                   </div>
                 )}
 
@@ -3214,6 +3319,30 @@ export function VarmbolMatchApp({
                 <div className="absolute left-1/2 -translate-x-1/2 top-3 w-16 h-4 border-b border-x border-white/25 pointer-events-none" />
                 <div className="absolute left-1/2 -translate-x-1/2 bottom-3 w-40 sm:w-52 h-16 border-t border-x border-white/30 pointer-events-none" />
                 <div className="absolute left-1/2 -translate-x-1/2 bottom-3 w-20 h-6 border-t border-x border-white/30 pointer-events-none" />
+
+                {/* Visuell sidopar-koppling i 1-4-1 (VM+IMV till vänster, IMH+HM till höger) */}
+                {currentFormation === "1-4-1" && (
+                  <>
+                    <div className="absolute left-[4%] w-[43%] top-[33%] h-[26%] rounded-2xl border border-dashed border-[#facc15]/50 bg-[#facc15]/[0.06] pointer-events-none flex items-start justify-center pt-1">
+                      <span className="px-2 py-0.5 rounded bg-black/60 text-[#facc15] font-mono-cm font-extrabold text-[9px] uppercase tracking-wider">
+                        Vänsterpar (VM + IMV) · Hjälps åt fram/bak
+                      </span>
+                    </div>
+                    <div className="absolute right-[4%] w-[43%] top-[33%] h-[26%] rounded-2xl border border-dashed border-sky-300/50 bg-sky-400/[0.06] pointer-events-none flex items-start justify-center pt-1">
+                      <span className="px-2 py-0.5 rounded bg-black/60 text-sky-200 font-mono-cm font-extrabold text-[9px] uppercase tracking-wider">
+                        Högerpar (IMH + HM) · Hjälps åt fram/bak
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {currentFormation === "1-1-3-1" && (
+                  <div className="absolute left-1/2 -translate-x-1/2 w-[36%] top-[47%] h-[32%] rounded-2xl border border-dashed border-amber-300/40 bg-amber-400/[0.05] pointer-events-none flex items-start justify-center pt-1">
+                    <span className="px-2 py-0.5 rounded bg-black/60 text-amber-200 font-mono-cm font-extrabold text-[9px] uppercase tracking-wider">
+                      Ankare (DM) + Back (LIB)
+                    </span>
+                  </div>
+                )}
 
                 {selectedOutIds.length > 0 && (
                   <div className="absolute top-2 right-2 z-10">
@@ -3580,26 +3709,125 @@ export function VarmbolMatchApp({
             </div>
 
             {isVfcDefault && (
-              <section className="cm-bevel rounded-xl p-4 space-y-3">
-                <h3 className="font-display font-extrabold text-sm uppercase tracking-wider text-[#facc15]">
-                  Cupplan · Söndag 25 oktober
-                </h3>
-                <p className="text-xs text-slate-300">10 spelare · 1–4–1 · Målvakten står hela matchen och ingår inte i bytesförslagen.</p>
+              <section className="cm-bevel rounded-xl p-4 space-y-3 border border-[#facc15]/50">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-display font-extrabold text-sm sm:text-base uppercase tracking-wider text-[#facc15]">
+                      Dagens Träningsmatch · Katrineholms AIK (KAIK)
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      Två uppställningar redo att växla mellan: <strong>1-4-1 (Lars · Sidopar V/H)</strong> och <strong>1-1-3-1 (Jockes · Back + Ankare + 3 Mitt + Spets)</strong>. Inlånade från P2018 idag: <strong>Jack</strong> & <strong>Amr</strong>.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {CUP_MATCHES.map((match) => (
-                    <button key={match.id} type="button" disabled={isFollowing}
-                      onClick={() => handleApplyPresetEvent(match)}
-                      aria-pressed={draftConfig.eventTitle === `Provcup 25 okt · ${match.title}`}
-                      className={`text-left p-3 rounded-lg border disabled:opacity-50 ${draftConfig.eventTitle === `Provcup 25 okt · ${match.title}` ? "bg-[#005cb9]/40 border-[#facc15]" : "bg-[#061224] border-white/10"}`}>
-                      <span className="block font-display font-extrabold text-sm text-white">{match.title}</span>
-                      <span className="block mt-1 text-xs text-slate-300">{match.subtitle}</span>
-                    </button>
+                  <button
+                    type="button"
+                    disabled={isFollowing}
+                    onClick={() =>
+                      setDraftConfig((c) => ({
+                        ...c,
+                        format: "7v7",
+                        formation: "1-4-1",
+                        opponent: "Katrineholms AIK",
+                        eventTitle: "Träningsmatch mot KAIK · 1-4-1 (Lars)",
+                      }))
+                    }
+                    className={`text-left p-3 rounded-lg border transition disabled:opacity-50 ${
+                      draftConfig.formation === "1-4-1"
+                        ? "bg-[#005cb9]/45 border-[#facc15] shadow"
+                        : "bg-[#061224] border-white/10 hover:border-sky-400/40"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-display font-extrabold text-sm uppercase text-white">
+                        1-4-1 · Sidopar Vänster & Höger (Lars)
+                      </span>
+                      {draftConfig.formation === "1-4-1" && (
+                        <Check className="w-4 h-4 text-[#facc15]" />
+                      )}
+                    </div>
+                    <span className="block mt-1 text-xs text-slate-300">
+                      Vänsterpar (<strong>VM + IMV</strong>) och Högerpar (<strong>HM + IMH</strong>) hjälps åt på sin kant. Går yttern fram säkrar CM upp bakåt så kanten aldrig lämnas öppen!
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isFollowing}
+                    onClick={() =>
+                      setDraftConfig((c) => ({
+                        ...c,
+                        format: "7v7",
+                        formation: "1-1-3-1",
+                        opponent: "Katrineholms AIK",
+                        eventTitle: "Träningsmatch mot KAIK · 1-1-3-1 (Jocke)",
+                      }))
+                    }
+                    className={`text-left p-3 rounded-lg border transition disabled:opacity-50 ${
+                      draftConfig.formation === "1-1-3-1"
+                        ? "bg-[#005cb9]/45 border-[#facc15] shadow"
+                        : "bg-[#061224] border-white/10 hover:border-sky-400/40"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-display font-extrabold text-sm uppercase text-white">
+                        1-1-3-1 · Back + Ankare + 3 Mitt (Jocke)
+                      </span>
+                      {draftConfig.formation === "1-1-3-1" && (
+                        <Check className="w-4 h-4 text-[#facc15]" />
+                      )}
+                    </div>
+                    <span className="block mt-1 text-xs text-slate-300">
+                      1 Back (<strong>LIB</strong>), 1 Defensiv mitt/Ankare (<strong>DM</strong>) framför backen, 3 på mittfältet (<strong>VM–CM–HM</strong>) och 1 Forward (<strong>FW</strong>).
+                    </span>
+                  </button>
+                </div>
+
+                <div className="border-t border-white/10 pt-3 space-y-1.5">
+                  <div className="font-mono-cm font-extrabold text-[11px] uppercase text-[#facc15]">
+                    Taktiska fokus-punkter i {draftConfig.formation}:
+                  </div>
+                  {(
+                    FORMATION_COACH_NOTES[draftConfig.formation] ||
+                    CUP_COACH_NOTES
+                  ).map((note) => (
+                    <p key={note.role} className="text-xs sm:text-sm text-slate-200">
+                      <strong className="text-[#facc15]">{note.role}:</strong>{" "}
+                      {note.text}
+                    </p>
                   ))}
                 </div>
-                <p className="text-xs text-slate-300">Välj match, kontrollera startuppställningen och tryck Starta match längst ner. Första matchen följer skissen. I övriga matcher tar Oscar den nya målvaktens utespelarplats som förval; ändra vid behov.</p>
-                <div className="border-t border-white/10 pt-3 space-y-2">
-                  {CUP_COACH_NOTES.map((note) => <p key={note.role} className="text-sm text-slate-200"><strong className="text-[#facc15]">{note.role}:</strong> {note.text}</p>)}
-                </div>
+
+                <details className="border-t border-white/10 pt-2 text-xs text-slate-400">
+                  <summary className="cursor-pointer font-mono-cm uppercase text-[11px] text-sky-300 hover:text-white">
+                    Visa tidigare cupplan (Söndag 25 okt Norrköping)
+                  </summary>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                    {CUP_MATCHES.map((match) => (
+                      <button
+                        key={match.id}
+                        type="button"
+                        disabled={isFollowing}
+                        onClick={() => handleApplyPresetEvent(match)}
+                        className={`text-left p-2.5 rounded-lg border disabled:opacity-50 ${
+                          draftConfig.eventTitle ===
+                          `Provcup 25 okt · ${match.title}`
+                            ? "bg-[#005cb9]/40 border-[#facc15]"
+                            : "bg-[#061224] border-white/10"
+                        }`}
+                      >
+                        <span className="block font-display font-extrabold text-xs text-white">
+                          {match.title}
+                        </span>
+                        <span className="block mt-0.5 text-[11px] text-slate-300">
+                          {match.subtitle}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </details>
               </section>
             )}
 
@@ -3680,29 +3908,27 @@ export function VarmbolMatchApp({
                   <label className="block text-[11px] font-mono-cm font-bold uppercase text-sky-300 mb-1">
                     Formation (7v7)
                   </label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(["1-4-1", "2-3-1", "2-2-2", "3-2-1"] as const).map(
-                      (fmt) => (
-                        <button
-                          key={fmt}
-                          type="button"
-                          onClick={() =>
-                            setDraftConfig((c) => ({
-                              ...c,
-                              format: "7v7",
-                              formation: fmt,
-                            }))
-                          }
-                          className={`py-1.5 rounded font-mono-cm font-extrabold text-xs border ${
-                            draftConfig.formation === fmt
-                              ? "bg-[#facc15] text-slate-950 border-yellow-200"
-                              : "bg-[#061224] text-slate-300 border-white/10"
-                          }`}
-                        >
-                          {fmt}
-                        </button>
-                      )
-                    )}
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                    {FORMATIONS_7V7.map((fmt) => (
+                      <button
+                        key={fmt}
+                        type="button"
+                        onClick={() =>
+                          setDraftConfig((c) => ({
+                            ...c,
+                            format: "7v7",
+                            formation: fmt,
+                          }))
+                        }
+                        className={`py-1.5 rounded font-mono-cm font-extrabold text-xs border ${
+                          draftConfig.formation === fmt
+                            ? "bg-[#facc15] text-slate-950 border-yellow-200"
+                            : "bg-[#061224] text-slate-300 border-white/10"
+                        }`}
+                      >
+                        {fmt}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -4118,7 +4344,10 @@ export function VarmbolMatchApp({
                                 {formatDurationMmSs(m.benchMs)}
                               </div>
                               <div className="mt-1">
-                                <PositionTime positionMs={m.positionMs} />
+                                <PositionTime
+                                  positionMs={m.positionMs}
+                                  showZones
+                                />
                               </div>
                             </div>
                           </div>
@@ -4146,6 +4375,152 @@ export function VarmbolMatchApp({
                       </div>
                     );
                   })}
+              </div>
+            </section>
+
+            {/* Sidopar & Formationsöversikt i matchen (1-4-1 vs 1-1-3-1) */}
+            <section className="cm-bevel rounded-xl overflow-hidden">
+              <div className="cm-header-bar px-4 py-2.5 flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-display font-extrabold text-base uppercase tracking-wider text-white">
+                    Uppställning & Sidopar ({currentFormation})
+                  </h2>
+                  <p className="text-[11px] font-mono-cm text-sky-200">
+                    Summerad tid på Vänstersida (VM+IMV), Högersida (HM+IMH) samt Centralt/Ankare (LIB/DM/CM).
+                  </p>
+                </div>
+              </div>
+              <div className="p-3 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="p-2.5 rounded-lg bg-[#050e1d] border border-emerald-400/30">
+                    <div className="font-mono-cm font-extrabold text-xs uppercase text-emerald-300">
+                      Vänsterpar (VM + IMV)
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Jobbar ihop om vänsterkanten (ytter + vänster CM)
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {playerMetrics
+                        .map((m) => ({
+                          name: m.player.name,
+                          ms: summarizeRoleZones(m.positionMs).leftSideMs,
+                        }))
+                        .filter((x) => x.ms >= 1000)
+                        .sort((a, b) => b.ms - a.ms)
+                        .map((x) => (
+                          <div
+                            key={x.name}
+                            className="flex items-center justify-between text-xs font-mono-cm text-white"
+                          >
+                            <span>{x.name}</span>
+                            <span className="text-emerald-300 font-bold">
+                              {formatDurationMmSs(x.ms)}
+                            </span>
+                          </div>
+                        ))}
+                      {playerMetrics.every(
+                        (m) => summarizeRoleZones(m.positionMs).leftSideMs < 1000
+                      ) && (
+                        <div className="text-xs font-mono-cm text-slate-500">
+                          Ingen tid registrerad ännu
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-[#050e1d] border border-sky-400/30">
+                    <div className="font-mono-cm font-extrabold text-xs uppercase text-sky-300">
+                      Högerpar (HM + IMH)
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Jobbar ihop om högerkanten (ytter + höger CM)
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {playerMetrics
+                        .map((m) => ({
+                          name: m.player.name,
+                          ms: summarizeRoleZones(m.positionMs).rightSideMs,
+                        }))
+                        .filter((x) => x.ms >= 1000)
+                        .sort((a, b) => b.ms - a.ms)
+                        .map((x) => (
+                          <div
+                            key={x.name}
+                            className="flex items-center justify-between text-xs font-mono-cm text-white"
+                          >
+                            <span>{x.name}</span>
+                            <span className="text-sky-300 font-bold">
+                              {formatDurationMmSs(x.ms)}
+                            </span>
+                          </div>
+                        ))}
+                      {playerMetrics.every(
+                        (m) => summarizeRoleZones(m.positionMs).rightSideMs < 1000
+                      ) && (
+                        <div className="text-xs font-mono-cm text-slate-500">
+                          Ingen tid registrerad ännu
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-[#050e1d] border border-amber-400/30">
+                    <div className="font-mono-cm font-extrabold text-xs uppercase text-amber-300">
+                      Centralt & Spets (LIB / DM / CM / FW)
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Back, defensivt ankare (1-1-3-1), C-mitt & forward
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {playerMetrics
+                        .map((m) => {
+                          const z = summarizeRoleZones(m.positionMs);
+                          return {
+                            name: m.player.name,
+                            ms: z.centralMs + z.attackMs,
+                          };
+                        })
+                        .filter((x) => x.ms >= 1000)
+                        .sort((a, b) => b.ms - a.ms)
+                        .map((x) => (
+                          <div
+                            key={x.name}
+                            className="flex items-center justify-between text-xs font-mono-cm text-white"
+                          >
+                            <span>{x.name}</span>
+                            <span className="text-amber-300 font-bold">
+                              {formatDurationMmSs(x.ms)}
+                            </span>
+                          </div>
+                        ))}
+                      {playerMetrics.every((m) => {
+                        const z = summarizeRoleZones(m.positionMs);
+                        return z.centralMs + z.attackMs < 1000;
+                      }) && (
+                        <div className="text-xs font-mono-cm text-slate-500">
+                          Ingen tid registrerad ännu
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {matchState.logs.some((l) => l.type === "formation") && (
+                  <div className="p-2.5 rounded-lg bg-[#040a14] border border-white/10 font-mono-cm text-xs text-slate-200">
+                    <span className="text-[#facc15] font-bold uppercase">
+                      Skiften mellan uppställningar i matchen:{" "}
+                    </span>
+                    {matchState.logs
+                      .filter((l) => l.type === "formation")
+                      .map(
+                        (l) =>
+                          `P${l.period} ${Math.floor(
+                            l.matchTimeMs / 60000
+                          )}' (${l.note})`
+                      )
+                      .join(" · ")}
+                  </div>
+                )}
               </div>
             </section>
 
@@ -4183,23 +4558,34 @@ export function VarmbolMatchApp({
             </section>
 
             <section className="cm-bevel rounded-xl overflow-hidden">
-              <div className="cm-header-bar px-4 py-2.5">
-                <h2 className="font-display font-extrabold text-base uppercase tracking-wider text-white">
-                  Cupen totalt
-                </h2>
-                <p className="text-[11px] font-mono-cm text-sky-200">
-                  Minst speltid överst. Pågående match räknas med, en sparad
-                  kopia av samma match räknas inte två gånger.
-                </p>
-                {cupGoalLine && (
-                  <p className="mt-1 font-mono-cm text-[11px] text-[#facc15]">
-                    {cupGoalLine}
+              <div className="cm-header-bar px-4 py-2.5 flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-display font-extrabold text-base uppercase tracking-wider text-white">
+                    Total speltid (Dagens matcher / Cup)
+                  </h2>
+                  <p className="text-[11px] font-mono-cm text-sky-200">
+                    Minst speltid överst. Pågående match räknas med, en sparad
+                    kopia av samma match räknas inte två gånger.
                   </p>
+                  {cupGoalLine && (
+                    <p className="mt-1 font-mono-cm text-[11px] text-[#facc15]">
+                      {cupGoalLine}
+                    </p>
+                  )}
+                </div>
+                {savedMatches.length > 0 && !isFollowing && (
+                  <button
+                    type="button"
+                    onClick={handleClearMatchHistory}
+                    className="px-2.5 py-1.5 rounded bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 font-mono-cm font-bold text-[10px] uppercase shrink-0"
+                  >
+                    Rensa tidigare matcher ({savedMatches.length})
+                  </button>
                 )}
               </div>
               {cupRows.length === 0 ? (
                 <p className="p-4 text-sm text-slate-300">
-                  Ingen tid i cupen ännu. Avspark börjar räknas direkt, och en
+                  Ingen tid registrerad ännu. Avspark börjar räknas direkt, och en
                   match som har gått mer än några sekunder sparas när nästa
                   startar.
                 </p>
@@ -4222,7 +4608,10 @@ export function VarmbolMatchApp({
                           {formatDurationMmSs(row.goalkeeperMs)}
                         </div>
                         <div className="mt-1">
-                          <PositionTime positionMs={row.positionMs} />
+                          <PositionTime
+                            positionMs={row.positionMs}
+                            showZones
+                          />
                         </div>
                       </div>
                       <div className="font-mono-cm text-lg font-extrabold text-white shrink-0">
@@ -4484,6 +4873,41 @@ export function VarmbolMatchApp({
                 ▲ ANFALLSRIKTNING ({currentFormation}) ▲
               </div>
 
+              {currentFormation === "1-4-1" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="p-3 rounded-xl bg-amber-400/10 border border-[#facc15]/60">
+                    <div className="font-mono-cm font-extrabold text-xs uppercase text-[#facc15]">
+                      🤝 VÄNSTERPARET (VM + CM VÄNSTER)
+                    </div>
+                    <div className="font-display font-extrabold text-lg uppercase text-white mt-0.5">
+                      {pitchMetrics.find((m) => m.player.pitchSlotIndex === 2)
+                        ?.player.name ?? "VM"}{" "}
+                      &amp;{" "}
+                      {pitchMetrics.find((m) => m.player.pitchSlotIndex === 3)
+                        ?.player.name ?? "IMV"}
+                    </div>
+                    <p className="text-xs text-slate-200 mt-1">
+                      Ansvarar för hela vänstersidan ihop! Går yttern fram säkrar CM Vänster upp lite bakåt så vänsterkanten aldrig lämnas öppen.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-sky-400/10 border border-sky-300/60">
+                    <div className="font-mono-cm font-extrabold text-xs uppercase text-sky-200">
+                      🤝 HÖGERPARET (CM HÖGER + HM)
+                    </div>
+                    <div className="font-display font-extrabold text-lg uppercase text-white mt-0.5">
+                      {pitchMetrics.find((m) => m.player.pitchSlotIndex === 4)
+                        ?.player.name ?? "IMH"}{" "}
+                      &amp;{" "}
+                      {pitchMetrics.find((m) => m.player.pitchSlotIndex === 5)
+                        ?.player.name ?? "HM"}
+                    </div>
+                    <p className="text-xs text-slate-200 mt-1">
+                      Ansvarar för hela högersidan ihop! Går yttern fram säkrar CM Höger upp lite bakåt så högerkanten aldrig lämnas öppen.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Uppställning uppifrån och ner (Anfall -> Mittfält -> Back -> Målvakt) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {[...formationSlots]
@@ -4544,9 +4968,11 @@ export function VarmbolMatchApp({
               {/* Dagens 4 fokuspunkter */}
               <div className="p-3 rounded-xl bg-[#050e1d] border border-white/10 space-y-1.5">
                 <div className="font-mono-cm font-extrabold text-xs uppercase text-[#facc15]">
-                  KOM IHÅG PÅ PLANEN IDAG:
+                  KOM IHÅG PÅ PLANEN IDAG ({currentFormation}):
                 </div>
-                {CUP_COACH_NOTES.map((note) => (
+                {(
+                  FORMATION_COACH_NOTES[currentFormation] || CUP_COACH_NOTES
+                ).map((note) => (
                   <p key={note.role} className="text-sm text-slate-200">
                     <strong className="text-[#facc15]">{note.role}:</strong>{" "}
                     {note.text}

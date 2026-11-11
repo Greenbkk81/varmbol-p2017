@@ -680,6 +680,7 @@ export function addOurGoal(
     side: "ours",
     period: withUndo.currentPeriod,
     matchTimeMs: getTotalMatchElapsedMs(withUndo, now),
+    formation: withUndo.config.formation,
   };
   return {
     ...withUndo,

@@ -668,6 +668,174 @@ export function assignGoalkeeperCollar(
   };
 }
 
+/**
+ * Flyttar valfri spelare (på plan eller på bänk) direkt till önskad position (`targetSlotIndex` 0..6)
+ * eller till bänken (`targetSlotIndex === -1`).
+ */
+export function movePlayerToSlot(
+  state: MatchState,
+  playerId: string,
+  targetSlotIndex: number,
+  now: number
+): MatchState {
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player) return state;
+
+  // Om man väljer Bänk (-1) för en spelare som är på planen
+  if (targetSlotIndex < 0) {
+    if (!player.onPitch) return state;
+    const benchCandidate =
+      state.players.find((p) => !p.onPitch && !p.resting) ??
+      state.players.find((p) => !p.onPitch);
+    if (!benchCandidate) return state;
+    return executeMultiSubstitution(state, [player.id], [benchCandidate.id], now);
+  }
+
+  // Spelaren är redan på planen -> skifta plats med den som har targetSlotIndex
+  if (player.onPitch) {
+    const currentSlot = player.pitchSlotIndex ?? (player.isGoalkeeper ? 0 : 1);
+    if (currentSlot === targetSlotIndex) return state;
+    const occupant = state.players.find(
+      (p) =>
+        p.onPitch &&
+        (p.pitchSlotIndex ?? (p.isGoalkeeper ? 0 : -99)) === targetSlotIndex
+    );
+    if (occupant) {
+      return swapPitchPositions(state, player.id, occupant.id, now);
+    }
+    const withSnap = pushUndoSnapshot(state, `Flytta ${player.name}`, now);
+    const committed = commitRunningTime(withSnap, now);
+    const capacity = getPitchCapacity(committed.config.format);
+    const updatedPlayers = committed.players.map((p) =>
+      p.id === player.id
+        ? {
+            ...p,
+            pitchSlotIndex: targetSlotIndex,
+            isGoalkeeper: targetSlotIndex === 0,
+          }
+        : targetSlotIndex === 0 && p.isGoalkeeper
+        ? { ...p, isGoalkeeper: false }
+        : p
+    );
+    return {
+      ...committed,
+      players: normalizePitchSlots(updatedPlayers, capacity),
+    };
+  }
+
+  // Spelaren är på bänken -> byt in på exakt den position som har targetSlotIndex
+  const occupant =
+    state.players.find(
+      (p) =>
+        p.onPitch &&
+        (p.pitchSlotIndex ?? (p.isGoalkeeper ? 0 : -99)) === targetSlotIndex
+    ) ?? state.players.find((p) => p.onPitch && !p.isGoalkeeper);
+  if (occupant) {
+    return executeMultiSubstitution(state, [occupant.id], [player.id], now);
+  }
+  return state;
+}
+
+/**
+ * Synkar ändringar i trupp / kallelse (MED/EJ MED, startpositioner, målvakt) direkt till live-matchen
+ * utan att nollställa matchklocka eller redan spelad tid om matchen är igång.
+ */
+export function syncSquadToLiveMatch(
+  state: MatchState,
+  roster: RosterPlayer[],
+  startingPitchIds: string[],
+  startingGkId: string,
+  now: number
+): MatchState {
+  const totalElapsed = getTotalMatchElapsedMs(state, now);
+  const isPreKickoff =
+    totalElapsed === 0 &&
+    state.currentPeriod === 1 &&
+    state.status === "paused";
+
+  if (isPreKickoff) {
+    const fresh = createInitialMatchState(
+      roster,
+      state.config,
+      startingPitchIds,
+      startingGkId
+    );
+    return {
+      ...fresh,
+      id: state.id,
+      ourScore: state.ourScore,
+      opponentScore: state.opponentScore,
+      goals: state.goals,
+      logs: state.logs,
+      undoStack: state.undoStack,
+    };
+  }
+
+  const committed = commitRunningTime(state, now);
+  const activeRoster = roster.filter((r) => r.activeInSquad);
+  const capacity = getPitchCapacity(committed.config.format);
+  const existingById = new Map(committed.players.map((p) => [p.id, p]));
+
+  const pitchSet = new Set(
+    startingPitchIds
+      .filter((id) => activeRoster.some((r) => r.id === id))
+      .slice(0, capacity)
+  );
+  for (const r of activeRoster) {
+    if (pitchSet.size >= capacity) break;
+    if (!pitchSet.has(r.id)) pitchSet.add(r.id);
+  }
+
+  const gkId =
+    startingGkId && pitchSet.has(startingGkId)
+      ? startingGkId
+      : [...pitchSet][0] ?? "";
+  const outfieldIds = [...pitchSet].filter((id) => id !== gkId);
+
+  const mergedPlayers: MatchPlayerState[] = activeRoster.map((r) => {
+    const prev = existingById.get(r.id);
+    const onPitch = pitchSet.has(r.id);
+    const isGoalkeeper = onPitch && r.id === gkId;
+    const pitchSlotIndex = onPitch
+      ? isGoalkeeper
+        ? 0
+        : outfieldIds.indexOf(r.id) + 1
+      : undefined;
+
+    if (prev) {
+      return {
+        ...prev,
+        name: r.name,
+        number: r.number,
+        avatarUrl: r.avatarUrl,
+        onPitch,
+        isGoalkeeper,
+        pitchSlotIndex,
+      };
+    }
+    return {
+      id: r.id,
+      name: r.name,
+      number: r.number,
+      avatarUrl: r.avatarUrl,
+      onPitch,
+      isGoalkeeper,
+      pitchSlotIndex,
+      accumulatedOutfieldMs: 0,
+      accumulatedGoalkeeperMs: 0,
+      accumulatedBenchMs: 0,
+      currentStintStartMatchMs: totalElapsed,
+      stintsCount: onPitch ? 1 : 0,
+      gkPeriods: isGoalkeeper ? [committed.currentPeriod] : [],
+    };
+  });
+
+  return {
+    ...committed,
+    players: normalizePitchSlots(mergedPlayers, capacity),
+  };
+}
+
 export function addOurGoal(
   state: MatchState,
   now: number,

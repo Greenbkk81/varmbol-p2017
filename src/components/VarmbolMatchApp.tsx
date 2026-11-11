@@ -43,6 +43,7 @@ import {
   CUP_MATCHES,
   FORMATION_COACH_NOTES,
   INITIAL_CUP_SETUP,
+  INITIAL_KAIK_SETUP,
   upgradeCupDuration,
 } from "@/lib/cup-plan";
 import {
@@ -58,6 +59,7 @@ import {
   getPitchCapacity,
   getTotalMatchElapsedMs,
   markGoalAssistDone,
+  movePlayerToSlot,
   pitchPositionCode,
   pushUndoSnapshot,
   removeLastGoal,
@@ -66,6 +68,7 @@ import {
   stampGoalPlayer,
   suggestSubstitutions,
   swapPitchPositions,
+  syncSquadToLiveMatch,
   undoLastAction,
 } from "@/lib/match-engine";
 import { mergeCupRows } from "@/lib/cup-totals";
@@ -110,13 +113,13 @@ const DEFAULT_TEAM_PROFILE: TeamProfile = {
 function getStorageKeys(teamId: string) {
   if (!teamId || teamId === "vfc-p2017") {
     return {
-      roster: "varmbol_p2017_roster_v3",
-      activeMatch: "varmbol_p2017_active_match_v3",
+      roster: "varmbol_p2017_roster_v4",
+      activeMatch: "varmbol_p2017_active_match_v4",
       history: "varmbol_p2017_history_v2",
       sound: "varmbol_p2017_sound_v1",
-      syncMode: "varmbol_p2017_sync_mode_v1",
+      syncMode: "varmbol_p2017_sync_mode_v2",
       deviceId: "varmbol_p2017_device_id_v1",
-      focusMode: "varmbol_p2017_focus_mode_v1",
+      focusMode: "varmbol_p2017_focus_mode_v2",
     };
   }
   return {
@@ -126,7 +129,7 @@ function getStorageKeys(teamId: string) {
     sound: "varmbol_p2017_sound_v1",
     syncMode: `team_${teamId}_sync_mode_v1`,
     deviceId: "varmbol_p2017_device_id_v1",
-    focusMode: "varmbol_p2017_focus_mode_v1",
+    focusMode: "varmbol_p2017_focus_mode_v2",
   };
 }
 
@@ -486,7 +489,7 @@ export function VarmbolMatchApp({
       return ensureVfcGuests(initialRemoteSnapshot.roster, isVfcDefault);
     }
     return isVfcDefault
-      ? ensureVfcGuests(INITIAL_CUP_SETUP.roster, isVfcDefault)
+      ? ensureVfcGuests(INITIAL_KAIK_SETUP.roster, isVfcDefault)
       : [];
   }, [initialRemoteSnapshot, isVfcDefault]);
 
@@ -495,7 +498,7 @@ export function VarmbolMatchApp({
       return initialRemoteSnapshot.matchState.config;
     }
     if (isVfcDefault) {
-      return INITIAL_CUP_SETUP.config;
+      return INITIAL_KAIK_SETUP.config;
     }
     const fmt = teamProfile.defaultFormat || "7v7";
     const form =
@@ -522,7 +525,7 @@ export function VarmbolMatchApp({
         .map((p) => p.id);
     }
     if (isVfcDefault) {
-      return [...INITIAL_CUP_SETUP.pitchIds];
+      return [...INITIAL_KAIK_SETUP.pitchIds];
     }
     return initialRoster.slice(0, initialCap).map((p) => p.id);
   }, [initialRemoteSnapshot, isVfcDefault, initialRoster, initialCap]);
@@ -537,7 +540,7 @@ export function VarmbolMatchApp({
       );
     }
     if (isVfcDefault) {
-      return INITIAL_CUP_SETUP.goalkeeperId;
+      return INITIAL_KAIK_SETUP.goalkeeperId;
     }
     return initialPitchIds[0] ?? "";
   }, [initialRemoteSnapshot, isVfcDefault, initialPitchIds]);
@@ -697,9 +700,8 @@ export function VarmbolMatchApp({
       const rawSound = localStorage.getItem(storageKeys.sound);
       if (rawSound === "0") setSoundEnabled(false);
 
-      const rawFocus = localStorage.getItem(storageKeys.focusMode);
       const urlFocus = new URLSearchParams(window.location.search).get("focus");
-      if (urlFocus === "1" || urlFocus === "true" || rawFocus === "1") {
+      if (urlFocus === "1" || urlFocus === "true") {
         setFocusMode(true);
       }
     } catch {
@@ -708,6 +710,18 @@ export function VarmbolMatchApp({
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKeys]);
+
+  // Håll setupPitchIds & setupGkId synkade med aktuell 2D-plan
+  useEffect(() => {
+    const onPitchSorted = matchState.players
+      .filter((p) => p.onPitch)
+      .sort((a, b) => (a.pitchSlotIndex ?? 0) - (b.pitchSlotIndex ?? 0));
+    if (onPitchSorted.length > 0) {
+      setSetupPitchIds(onPitchSorted.map((p) => p.id));
+      const gk = onPitchSorted.find((p) => p.isGoalkeeper) ?? onPitchSorted[0];
+      if (gk) setSetupGkId(gk.id);
+    }
+  }, [matchState.players]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -1148,6 +1162,15 @@ export function VarmbolMatchApp({
 
   const isFollowing = syncMode === "follow" || isReadOnlyFollower;
 
+  function takeCoachControl(): boolean {
+    if (isReadOnlyFollower) return false;
+    if (syncMode === "follow") {
+      setSyncMode("control");
+    }
+    forceNextPushRef.current = true;
+    return true;
+  }
+
   function handleSetSyncMode(nextMode: SyncMode) {
     if (isReadOnlyFollower) return;
     if (nextMode === "control") {
@@ -1162,7 +1185,7 @@ export function VarmbolMatchApp({
   }
 
   function toggleSelectPitchPlayer(playerId: string) {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     setSuggestionBanner(null);
     setSelectedOutIds((prev) =>
       prev.includes(playerId)
@@ -1172,7 +1195,7 @@ export function VarmbolMatchApp({
   }
 
   function toggleSelectBenchPlayer(playerId: string) {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     setSuggestionBanner(null);
     setSelectedInIds((prev) =>
       prev.includes(playerId)
@@ -1188,7 +1211,7 @@ export function VarmbolMatchApp({
   }
 
   function handleSuggestSubs(count: number) {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     setSuggestionCount(count);
     const suggestion = suggestSubstitutions(matchState, Date.now(), count);
     setSelectedOutIds(suggestion.outIds);
@@ -1197,7 +1220,7 @@ export function VarmbolMatchApp({
   }
 
   function handleSetStintMinutes(minutes: (typeof STINT_MINUTE_CHOICES)[number]) {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     setMatchState((prev) => ({
       ...prev,
       config: { ...prev.config, stintMinutes: minutes },
@@ -1211,7 +1234,7 @@ export function VarmbolMatchApp({
   }
 
   function handleConfirmSubstitution() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     if (
       selectedOutIds.length === 0 ||
       selectedOutIds.length !== selectedInIds.length
@@ -1227,9 +1250,31 @@ export function VarmbolMatchApp({
     clearSubSelection();
   }
 
-  // Om man valt exakt 2 spelare på planen och 0 på bänken kan man även skifta deras positioner i 1-4-1!
+  // Direkt 1-klicksbyte mellan en specifik spelare på planen och en på bänken
+  function handleQuickSubPair(outPlayerId: string, inPlayerId: string) {
+    if (!takeCoachControl()) return;
+    const ts = Date.now();
+    setNow(ts);
+    setMatchState((prev) =>
+      executeMultiSubstitution(prev, [outPlayerId], [inPlayerId], ts)
+    );
+    cue("sub");
+    clearSubSelection();
+  }
+
+  // Direkt flytt av valfri spelare (på plan eller på bänk) till önskad position (slot 0..6 eller -1 för bänk)
+  function handleMovePlayerToSlot(playerId: string, targetSlotIndex: number) {
+    if (!takeCoachControl()) return;
+    const ts = Date.now();
+    setNow(ts);
+    setMatchState((prev) => movePlayerToSlot(prev, playerId, targetSlotIndex, ts));
+    cue("swap");
+    clearSubSelection();
+  }
+
+  // Om man valt exakt 2 spelare på planen och 0 på bänken kan man även skifta deras positioner!
   function handleSwapTwoPitchPlayers() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     if (selectedOutIds.length !== 2 || selectedInIds.length !== 0) return;
     const ts = Date.now();
     setNow(ts);
@@ -1345,7 +1390,7 @@ export function VarmbolMatchApp({
   }
 
   function handleToggleClock() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const ts = Date.now();
     const wasRunning = matchState.status === "running";
     const atKickoff =
@@ -1381,7 +1426,7 @@ export function VarmbolMatchApp({
   }
 
   function handleEndPeriod() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const ts = Date.now();
     const elapsedInPeriod = getCurrentPeriodElapsedMs(matchState, ts);
     const targetMs = matchState.config.periodMinutes * 60 * 1000;
@@ -1446,7 +1491,7 @@ export function VarmbolMatchApp({
   }
 
   function handleAssignGoalkeeper(playerId: string, swapIfOnBench = true) {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const ts = Date.now();
     setNow(ts);
     setMatchState((prev) =>
@@ -1457,7 +1502,7 @@ export function VarmbolMatchApp({
   }
 
   function handleUndo() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const ts = Date.now();
     setNow(ts);
     setMatchState((prev) => undoLastAction(prev, ts));
@@ -1474,7 +1519,7 @@ export function VarmbolMatchApp({
   }
 
   function handleAddOurGoal() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const ts = Date.now();
     const goalId = `goal-${ts}-${Math.random().toString(36).slice(2, 6)}`;
     setNow(ts);
@@ -1487,14 +1532,14 @@ export function VarmbolMatchApp({
   }
 
   function handleRemoveOurGoal() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const removedId = lastGoalId(matchState.goals, "ours");
     setMatchState((prev) => removeLastGoal(prev, "ours"));
     setGoalPick((pick) => (pick && pick.goalId === removedId ? null : pick));
   }
 
   function handleAddOpponentGoal() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const ts = Date.now();
     setNow(ts);
     setMatchState((prev) => addOpponentGoal(prev, ts));
@@ -1502,18 +1547,18 @@ export function VarmbolMatchApp({
   }
 
   function handleRemoveOpponentGoal() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     setMatchState((prev) => removeLastGoal(prev, "theirs"));
   }
 
   function handleSkipGoalPick() {
-    if (!goalPick || isFollowing) return;
+    if (!goalPick || !takeCoachControl()) return;
     setMatchState((prev) => markGoalAssistDone(prev, goalPick.goalId));
     setGoalPick(null);
   }
 
   function handlePitchPlayerClick(playerId: string) {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     if (!goalPick) {
       toggleSelectPitchPlayer(playerId);
       return;
@@ -1555,7 +1600,7 @@ export function VarmbolMatchApp({
   }
 
   function handleSaveMatchToHistory() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const ts = Date.now();
     rememberMatch(matchState, ts);
     setActiveTab("stats");
@@ -1569,7 +1614,7 @@ export function VarmbolMatchApp({
   const pitchCapacity = getPitchCapacity(draftConfig.format);
 
   function handleApplyPresetEvent(preset: PresetEvent) {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const cupMatch = CUP_MATCHES.find((match) => match.id === preset.id);
     if (cupMatch) {
       const setup = buildCupSetup(cupMatch, roster);
@@ -1651,7 +1696,7 @@ export function VarmbolMatchApp({
   }
 
   function handleRotateStartersByCupFairness() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const cap = getPitchCapacity(draftConfig.format);
     const activePlayers = roster.filter((p) => p.activeInSquad);
     const gkId = activePlayers.some((p) => p.id === setupGkId)
@@ -1672,24 +1717,49 @@ export function VarmbolMatchApp({
         const bOnPitch = currentPitchSet.has(b.id) ? 1 : 0;
         return aOnPitch - bOnPitch;
       });
-    setSetupPitchIds([
+    const nextPitchIds = [
       gkId,
       ...sortedOutfield.slice(0, cap - 1).map((p) => p.id),
-    ]);
+    ];
+    setSetupPitchIds(nextPitchIds);
+    const ts = Date.now();
+    setNow(ts);
+    setMatchState((prev) =>
+      syncSquadToLiveMatch(prev, roster, nextPitchIds, gkId, ts)
+    );
   }
 
   function handleTogglePlayerInSquad(playerId: string) {
-    if (isFollowing) return;
-    setRoster((prev) =>
-      prev.map((p) =>
-        p.id === playerId ? { ...p, activeInSquad: !p.activeInSquad } : p
-      )
+    if (!takeCoachControl()) return;
+    const nextRoster = roster.map((p) =>
+      p.id === playerId ? { ...p, activeInSquad: !p.activeInSquad } : p
+    );
+    setRoster(nextRoster);
+    const activeIds = new Set(
+      nextRoster.filter((p) => p.activeInSquad).map((p) => p.id)
+    );
+    const nextPitchIds = setupPitchIds.filter((id) => activeIds.has(id));
+    for (const p of nextRoster) {
+      if (nextPitchIds.length >= pitchCapacity) break;
+      if (p.activeInSquad && !nextPitchIds.includes(p.id)) {
+        nextPitchIds.push(p.id);
+      }
+    }
+    const nextGkId = activeIds.has(setupGkId)
+      ? setupGkId
+      : nextPitchIds[0] ?? "";
+    setSetupPitchIds(nextPitchIds);
+    setSetupGkId(nextGkId);
+    const ts = Date.now();
+    setNow(ts);
+    setMatchState((prev) =>
+      syncSquadToLiveMatch(prev, nextRoster, nextPitchIds, nextGkId, ts)
     );
   }
 
   function handleTogglePlayerResting(playerId: string, e?: React.MouseEvent) {
     if (e) e.stopPropagation();
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     setMatchState((prev) => ({
       ...prev,
       players: prev.players.map((p) =>
@@ -1700,48 +1770,37 @@ export function VarmbolMatchApp({
   }
 
   function handleAssignSetupSlot(playerId: string, targetSlotIndex: number) {
-    if (isFollowing) return;
-    if (targetSlotIndex === 0) {
-      if (!setupPitchIds.includes(playerId)) {
-        handleToggleSetupStarter(playerId);
-      }
-      setSetupGkId(playerId);
-      return;
-    }
-    setSetupPitchIds((prev) => {
-      const outfield = prev.filter((id) => id !== setupGkId);
-      const currentIdx = outfield.indexOf(playerId);
-      const targetIdx = Math.max(
-        0,
-        Math.min(outfield.length - 1, targetSlotIndex - 1)
-      );
-      if (currentIdx === -1 || currentIdx === targetIdx) return prev;
-      const nextOutfield = [...outfield];
-      const temp = nextOutfield[targetIdx];
-      nextOutfield[targetIdx] = playerId;
-      nextOutfield[currentIdx] = temp;
-      return [setupGkId, ...nextOutfield];
-    });
+    if (!takeCoachControl()) return;
+    const ts = Date.now();
+    setNow(ts);
+    setMatchState((prev) =>
+      movePlayerToSlot(prev, playerId, targetSlotIndex, ts)
+    );
   }
 
   function handleToggleSetupStarter(playerId: string) {
-    if (isFollowing) return;
-    setSetupPitchIds((prev) => {
-      if (prev.includes(playerId)) {
-        return prev.filter((id) => id !== playerId);
-      }
-      if (prev.length >= pitchCapacity) {
-        const withoutLast = prev.filter((id) => id !== setupGkId);
-        const dropId = withoutLast[withoutLast.length - 1] ?? prev[0];
-        return [...prev.filter((id) => id !== dropId), playerId];
-      }
-      return [...prev, playerId];
-    });
+    if (!takeCoachControl()) return;
+    const isCurrentlyOnPitch = matchState.players.some(
+      (p) => p.id === playerId && p.onPitch
+    );
+    const ts = Date.now();
+    setNow(ts);
+    if (isCurrentlyOnPitch) {
+      setMatchState((prev) => movePlayerToSlot(prev, playerId, -1, ts));
+    } else {
+      // Byt in mot sista utespelaren på planen
+      const outfieldOnPitch = matchState.players.filter(
+        (p) => p.onPitch && !p.isGoalkeeper
+      );
+      const targetSlot =
+        outfieldOnPitch[outfieldOnPitch.length - 1]?.pitchSlotIndex ?? 1;
+      setMatchState((prev) => movePlayerToSlot(prev, playerId, targetSlot, ts));
+    }
   }
 
   function handleAddNewPlayer(e: React.FormEvent) {
     e.preventDefault();
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const trimmed = newPlayerName.trim();
     if (!trimmed) return;
     const parts = trimmed
@@ -1750,63 +1809,81 @@ export function VarmbolMatchApp({
       .filter(Boolean);
     if (parts.length === 0) return;
 
-    setRoster((prev) => {
-      const added: RosterPlayer[] = parts.map((rawName, idx) => ({
-        id: `p-${Date.now()}-${idx}`,
-        name: rawName,
-        number: String(prev.length + idx + 1),
-        activeInSquad: true,
-      }));
-      const next = [...prev, ...added];
-      if (prev.length < pitchCapacity) {
-        const nextStarters = next
-          .filter((p) => p.activeInSquad)
-          .slice(0, pitchCapacity)
-          .map((p) => p.id);
-        setSetupPitchIds(nextStarters);
-        if (!setupGkId && nextStarters[0]) {
-          setSetupGkId(nextStarters[0]);
-        }
-      }
-      return next;
-    });
+    const added: RosterPlayer[] = parts.map((rawName, idx) => ({
+      id: `p-${Date.now()}-${idx}`,
+      name: rawName,
+      number: String(roster.length + idx + 1),
+      activeInSquad: true,
+    }));
+    const nextRoster = [...roster, ...added];
+    setRoster(nextRoster);
+    const activeIds = nextRoster.filter((p) => p.activeInSquad).map((p) => p.id);
+    const nextStarters =
+      setupPitchIds.length >= pitchCapacity
+        ? setupPitchIds
+        : activeIds.slice(0, pitchCapacity);
+    const nextGkId = setupGkId || nextStarters[0] || "";
+    setSetupPitchIds(nextStarters);
+    setSetupGkId(nextGkId);
+    const ts = Date.now();
+    setNow(ts);
+    setMatchState((prev) =>
+      syncSquadToLiveMatch(prev, nextRoster, nextStarters, nextGkId, ts)
+    );
     setNewPlayerName("");
   }
 
   function handleBulkImportPlayers(replaceExisting: boolean) {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const names = bulkPlayersText
       .split(/[,\n;]+/)
       .map((s) => s.replace(/^\d+[\.\)\-\s]+/, "").trim())
       .filter(Boolean);
     if (names.length === 0) return;
 
-    setRoster((prev) => {
-      const base = replaceExisting ? [] : prev;
-      const created: RosterPlayer[] = names.map((name, idx) => ({
-        id: `p-${Date.now()}-${idx}`,
-        name,
-        number: String(base.length + idx + 1),
-        activeInSquad: true,
-      }));
-      const next = [...base, ...created];
-      const starters = next.slice(0, pitchCapacity).map((p) => p.id);
-      setSetupPitchIds(starters);
-      setSetupGkId(starters[0] || "");
-      return next;
-    });
+    const base = replaceExisting ? [] : roster;
+    const created: RosterPlayer[] = names.map((name, idx) => ({
+      id: `p-${Date.now()}-${idx}`,
+      name,
+      number: String(base.length + idx + 1),
+      activeInSquad: true,
+    }));
+    const nextRoster = [...base, ...created];
+    const starters = nextRoster
+      .filter((p) => p.activeInSquad)
+      .slice(0, pitchCapacity)
+      .map((p) => p.id);
+    const nextGkId = starters[0] || "";
+    setRoster(nextRoster);
+    setSetupPitchIds(starters);
+    setSetupGkId(nextGkId);
+    const ts = Date.now();
+    setNow(ts);
+    setMatchState((prev) =>
+      syncSquadToLiveMatch(prev, nextRoster, starters, nextGkId, ts)
+    );
     setBulkPlayersText("");
     setShowBulkImport(false);
   }
 
   function handleRemovePlayerFromRoster(playerId: string) {
-    if (isFollowing) return;
-    setRoster((prev) => prev.filter((p) => p.id !== playerId));
-    setSetupPitchIds((prev) => prev.filter((id) => id !== playerId));
+    if (!takeCoachControl()) return;
+    const nextRoster = roster.filter((p) => p.id !== playerId);
+    const nextStarters = setupPitchIds.filter((id) => id !== playerId);
+    const nextGkId =
+      setupGkId === playerId ? nextStarters[0] || "" : setupGkId;
+    setRoster(nextRoster);
+    setSetupPitchIds(nextStarters);
+    setSetupGkId(nextGkId);
+    const ts = Date.now();
+    setNow(ts);
+    setMatchState((prev) =>
+      syncSquadToLiveMatch(prev, nextRoster, nextStarters, nextGkId, ts)
+    );
   }
 
   function handleStartNewMatchFromSetup() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     const ts = Date.now();
     const elapsedMs = getTotalMatchElapsedMs(matchState, ts);
     if (elapsedMs > 5_000 && matchState.status !== "finished") {
@@ -1896,7 +1973,7 @@ export function VarmbolMatchApp({
   }, [matchState.config.eventTitle, matchState.config.opponent]);
 
   function handleAdvanceToNextCupMatch() {
-    if (isFollowing || !nextCupMatch) return;
+    if (!nextCupMatch || !takeCoachControl()) return;
     const ts = Date.now();
     if (getTotalMatchElapsedMs(matchState, ts) > 5_000) {
       rememberMatch(matchState, ts);
@@ -1965,7 +2042,7 @@ export function VarmbolMatchApp({
   }
 
   function handleClearMatchHistory() {
-    if (isFollowing) return;
+    if (!takeCoachControl()) return;
     if (
       typeof window !== "undefined" &&
       !window.confirm(
@@ -2155,21 +2232,11 @@ export function VarmbolMatchApp({
           : "min-h-screen flex flex-col pb-36 select-none"
       }
     >
-      {(focusMode || activeTab !== "match") && (
-        <button
-          type="button"
-          onClick={() => { setFocusMode(false); setActiveTab("match"); }}
-          className="min-h-11 px-3 py-2 flex items-center gap-2 shrink-0 bg-[#050e1d] text-[#facc15] border-b border-sky-400/30 font-display font-bold text-sm"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Tillbaka till huvudmenyn
-        </button>
-      )}
       {/* ============================================================
           CHAMPIONSHIP MANAGER TOP TITLE BAR & NAVIGATION
          ============================================================ */}
-      {(!focusMode || activeTab !== "match") && (
       <header className="sticky top-0 z-30 bg-[#050e1d]/95 backdrop-blur-md border-b-2 border-[#facc15]/80 shadow-[0_6px_30px_rgba(0,0,0,0.85)]">
+        {(!focusMode || activeTab !== "match") && (
         <div className="cm-header-bar px-3 py-2">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
             {/* Klubbvapen & Titel */}
@@ -2357,9 +2424,10 @@ export function VarmbolMatchApp({
             </div>
           </div>
         </div>
+        )}
 
         {/* CM FLIK-MENY (TACTICS / SQUAD / STATS) */}
-        <div className="max-w-4xl mx-auto px-3 py-1.5 flex items-center gap-1.5 bg-[#061224]">
+        <div className="max-w-4xl mx-auto px-2 sm:px-3 py-1.5 flex items-center gap-1 sm:gap-1.5 bg-[#061224]">
           <button
             type="button"
             onClick={() => setActiveTab("match")}
@@ -2382,7 +2450,7 @@ export function VarmbolMatchApp({
             className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
               activeTab === "tactics"
                 ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
-                : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
+                : "bg-[#0b1c36] text-[#facc15] border-[#facc15]/45 hover:bg-[#10274a]"
             }`}
           >
             <Compass className="w-3.5 h-3.5 shrink-0" />
@@ -2427,9 +2495,19 @@ export function VarmbolMatchApp({
             <BookOpen className="w-3.5 h-3.5 shrink-0" />
             <span>Guide</span>
           </button>
+
+          {focusMode && activeTab === "match" && (
+            <button
+              type="button"
+              onClick={() => setFocusMode(false)}
+              className="py-1.5 px-2 rounded bg-slate-900 text-[#facc15] border border-[#facc15]/40 font-mono-cm font-extrabold text-[10px] uppercase shrink-0"
+              title="Avsluta fokusläge"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </header>
-      )}
 
       <main
         className={
@@ -2702,6 +2780,16 @@ export function VarmbolMatchApp({
                     >
                       Samling
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("tactics")}
+                      title="Öppna animerad rörelsetaktik för Anfall & Försvar"
+                      className="px-1.5 py-0.5 rounded font-display font-extrabold uppercase text-[11px] bg-[#facc15] text-slate-950 border border-yellow-200 flex items-center gap-0.5"
+                    >
+                      <Compass className="w-3 h-3" />
+                      <span>Rörelse</span>
+                    </button>
                   </div>
 
                   <div className="flex items-center gap-1">
@@ -2891,7 +2979,43 @@ export function VarmbolMatchApp({
 
               {/* Kompakt bytesrad direkt över bänken när spelare är valda */}
               {(selectedOutIds.length > 0 || selectedInIds.length > 0) && (
-                <div className="rounded-lg bg-[#040c1a] border border-[#facc15] px-2.5 py-1.5 flex flex-col gap-1 shrink-0">
+                <div className="rounded-lg bg-[#040c1a] border border-[#facc15] px-2.5 py-1.5 flex flex-col gap-1.5 shrink-0">
+                  {selectedOutIds.length === 1 && selectedInIds.length === 0 && (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="font-mono-cm text-[9px] font-bold uppercase text-sky-300">
+                        Flytta position:
+                      </span>
+                      {formationSlots.map((slot) => {
+                        const occ = pitchMetrics.find(
+                          (m) =>
+                            (m.player.pitchSlotIndex ??
+                              (m.player.isGoalkeeper ? 0 : -1)) ===
+                            slot.slotIndex
+                        )?.player;
+                        const isSelf = occ?.id === selectedOutIds[0];
+                        return (
+                          <button
+                            key={slot.slotIndex}
+                            type="button"
+                            onClick={() =>
+                              handleMovePlayerToSlot(
+                                selectedOutIds[0],
+                                slot.slotIndex
+                              )
+                            }
+                            className={`px-1.5 py-0.5 rounded font-mono-cm font-extrabold text-[9px] border ${
+                              isSelf
+                                ? "bg-[#facc15] text-slate-950 border-yellow-200"
+                                : "bg-[#0f2547] text-white border-sky-400/40"
+                            }`}
+                          >
+                            {slot.code}
+                            {occ && !isSelf ? ` (${occ.name})` : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div className="font-mono-cm text-[11px] font-bold text-[#facc15] leading-tight">
                     {subPairsSummary}
                   </div>
@@ -3299,6 +3423,23 @@ export function VarmbolMatchApp({
                   className="px-2.5 py-1 rounded font-display font-bold uppercase tracking-wider text-xs bg-[#0f2547] hover:bg-[#173562] text-sky-200 border border-sky-400/30"
                 >
                   📋 Samling
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("tactics")}
+                  className="px-2.5 py-1 rounded font-display font-extrabold uppercase tracking-wider text-xs bg-[#facc15] hover:bg-yellow-300 text-slate-950 border border-yellow-200 shadow flex items-center gap-1"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Rörelse (Anfall / Försvar)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("setup")}
+                  className="px-2.5 py-1 rounded font-display font-bold uppercase tracking-wider text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40"
+                >
+                  🔧 Ändra Uppställning / Trupp
                 </button>
               </div>
 
@@ -3847,7 +3988,7 @@ export function VarmbolMatchApp({
                       Dagens Träningsmatch · Katrineholms AIK (KAIK)
                     </h3>
                     <p className="text-xs text-slate-300 mt-0.5">
-                      9 spelare idag: <strong>Gabriel, Oliver, Holger, Edvin, Oscar, Scott, Abdullahi</strong> + inlånade från P2018: <strong>Jack & Amr</strong>.
+                      9 spelare idag: <strong>Gabriel, Bilel, Holger, Edvin, Oscar, Scott, Abdullahi</strong> + inlånade från P2018: <strong>Jack & Amr</strong> (Oliver utgår).
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -4214,9 +4355,28 @@ export function VarmbolMatchApp({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {roster.map((player) => {
+                  const livePlayer = matchState.players.find(
+                    (p) => p.id === player.id
+                  );
                   const isStarter =
-                    player.activeInSquad && setupPitchIds.includes(player.id);
-                  const isGk = isStarter && setupGkId === player.id;
+                    player.activeInSquad &&
+                    (livePlayer ? livePlayer.onPitch : setupPitchIds.includes(player.id));
+                  const isGk =
+                    isStarter &&
+                    (livePlayer ? livePlayer.isGoalkeeper : setupGkId === player.id);
+                  const currentSlotIdx = !isStarter
+                    ? -1
+                    : isGk
+                    ? 0
+                    : livePlayer?.pitchSlotIndex ??
+                      setupPitchIds
+                        .filter((id) => id !== setupGkId)
+                        .indexOf(player.id) + 1;
+                  const activeSlots =
+                    FORMATION_SLOTS[currentFormation] || FORMATION_SLOTS["1-4-1"];
+                  const slotMeta = activeSlots.find(
+                    (s) => s.slotIndex === currentSlotIdx
+                  );
 
                   return (
                     <div
@@ -4243,11 +4403,11 @@ export function VarmbolMatchApp({
                           </div>
                           <div className="text-[10px] font-mono-cm text-slate-400">
                             {!player.activeInSquad
-                              ? "FRÅNVARANDE"
+                              ? "FRÅNVARANDE (EJ MED)"
                               : isGk
                               ? "STARTAR I MÅL (MV)"
                               : isStarter
-                              ? `STARTAR · ${FORMATION_SLOTS[draftConfig.formation].find((slot) => slot.slotIndex === setupPitchIds.filter((id) => id !== setupGkId).indexOf(player.id) + 1)?.label ?? "PLAN"}`
+                              ? `STARTAR · ${slotMeta?.code ?? ""} ${slotMeta?.label ?? "PLAN"}`
                               : "AVBYTARE (BÄNK)"}
                           </div>
                         </div>
@@ -4256,44 +4416,46 @@ export function VarmbolMatchApp({
                       <div className="flex items-center gap-1 flex-wrap justify-end">
                         {player.activeInSquad && (
                           <>
-                            {isStarter && (
-                              <select
-                                aria-label={`Startposition för ${player.name}`}
-                                value={
-                                  isGk
-                                    ? 0
-                                    : setupPitchIds
-                                        .filter((id) => id !== setupGkId)
-                                        .indexOf(player.id) + 1
-                                }
-                                onChange={(e) =>
-                                  handleAssignSetupSlot(
-                                    player.id,
-                                    Number(e.target.value)
-                                  )
-                                }
-                                className="px-1.5 py-1 rounded bg-[#040a14] border border-emerald-400/40 font-mono-cm font-extrabold text-[10px] text-emerald-200"
-                              >
-                                {FORMATION_SLOTS[draftConfig.formation].map(
-                                  (slot) => (
-                                    <option
-                                      key={slot.slotIndex}
-                                      value={slot.slotIndex}
-                                    >
-                                      {slot.code} · {slot.label}
-                                    </option>
-                                  )
-                                )}
-                              </select>
-                            )}
+                            <select
+                              aria-label={`Position för ${player.name}`}
+                              value={currentSlotIdx}
+                              onChange={(e) =>
+                                handleAssignSetupSlot(
+                                  player.id,
+                                  Number(e.target.value)
+                                )
+                              }
+                              className={`px-1.5 py-1 rounded bg-[#040a14] border font-mono-cm font-extrabold text-[10px] ${
+                                isStarter
+                                  ? "border-emerald-400/50 text-emerald-200"
+                                  : "border-sky-400/35 text-sky-200"
+                              }`}
+                            >
+                              {activeSlots.map((slot) => {
+                                const occ = matchState.players.find(
+                                  (p) =>
+                                    p.onPitch &&
+                                    (p.pitchSlotIndex ??
+                                      (p.isGoalkeeper ? 0 : -99)) ===
+                                      slot.slotIndex
+                                );
+                                return (
+                                  <option
+                                    key={slot.slotIndex}
+                                    value={slot.slotIndex}
+                                  >
+                                    {slot.code} · {slot.label}
+                                    {occ && occ.id !== player.id
+                                      ? ` (${occ.name})`
+                                      : ""}
+                                  </option>
+                                );
+                              })}
+                              <option value={-1}>BÄNK · Avbytare</option>
+                            </select>
                             <button
                               type="button"
-                              onClick={() => {
-                                if (!isStarter) {
-                                  handleToggleSetupStarter(player.id);
-                                }
-                                setSetupGkId(player.id);
-                              }}
+                              onClick={() => handleAssignSetupSlot(player.id, 0)}
                               className={`px-2 py-1 rounded font-mono-cm font-extrabold text-[10px] border ${
                                 isGk
                                   ? "bg-[#facc15] text-slate-950 border-yellow-200"
@@ -4811,13 +4973,117 @@ export function VarmbolMatchApp({
       </main>
 
       {/* ============================================================
-          FLYTANDE MULTI-BYTESBALK LÄNGST NER (1, 2, 3 ELLER 4 BYTEN)
+          FLYTANDE MULTI-BYTESBALK & SNABB POSITIONSÄNDRING LÄNGST NER
          ============================================================ */}
       {activeTab === "match" &&
         !focusMode &&
         (selectedOutIds.length > 0 || selectedInIds.length > 0) && (
           <div className="fixed bottom-0 inset-x-0 z-40 p-2.5 bg-gradient-to-t from-[#02060d] via-[#040c1a]/95 to-transparent backdrop-blur-md">
-            <div className="max-w-4xl mx-auto cm-bevel rounded-xl p-3 border-2 border-[#facc15]">
+            <div className="max-w-4xl mx-auto cm-bevel rounded-xl p-3 border-2 border-[#facc15] space-y-2.5">
+              {/* 1-klicks positionsflytt & direktbyte när 1 spelare på planen är vald */}
+              {selectedOutIds.length === 1 && selectedInIds.length === 0 && (
+                <div className="space-y-1.5 pb-2 border-b border-white/15">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono-cm text-[10px] font-extrabold uppercase text-[#facc15]">
+                      Flytta{" "}
+                      {
+                        matchState.players.find(
+                          (p) => p.id === selectedOutIds[0]
+                        )?.name
+                      }{" "}
+                      till position:
+                    </span>
+                    {formationSlots.map((slot) => {
+                      const occ = pitchMetrics.find(
+                        (m) =>
+                          (m.player.pitchSlotIndex ??
+                            (m.player.isGoalkeeper ? 0 : -1)) === slot.slotIndex
+                      )?.player;
+                      const isSelf = occ?.id === selectedOutIds[0];
+                      return (
+                        <button
+                          key={slot.slotIndex}
+                          type="button"
+                          onClick={() =>
+                            handleMovePlayerToSlot(
+                              selectedOutIds[0],
+                              slot.slotIndex
+                            )
+                          }
+                          className={`px-2 py-1 rounded font-mono-cm font-extrabold text-[10px] border transition active:scale-95 ${
+                            isSelf
+                              ? "bg-[#facc15] text-slate-950 border-yellow-200"
+                              : "bg-[#0f2547] hover:bg-[#173562] text-white border-sky-400/40"
+                          }`}
+                        >
+                          {slot.code}
+                          {occ && !isSelf ? ` (⇄ ${occ.name})` : " (Nu)"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {benchMetrics.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono-cm text-[10px] font-extrabold uppercase text-emerald-300">
+                        Byt ut direkt mot bänk:
+                      </span>
+                      {benchMetrics.map((bm) => (
+                        <button
+                          key={bm.player.id}
+                          type="button"
+                          onClick={() =>
+                            handleQuickSubPair(selectedOutIds[0], bm.player.id)
+                          }
+                          className="px-2.5 py-1 rounded bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-display font-extrabold text-xs uppercase shadow active:scale-95"
+                        >
+                          ⇄ {bm.player.name} IN
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 1-klicks inbyte på valfri position när 1 spelare på bänken är vald */}
+              {selectedOutIds.length === 0 && selectedInIds.length === 1 && (
+                <div className="space-y-1.5 pb-2 border-b border-white/15">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono-cm text-[10px] font-extrabold uppercase text-emerald-300">
+                      Sätt in{" "}
+                      {
+                        matchState.players.find(
+                          (p) => p.id === selectedInIds[0]
+                        )?.name
+                      }{" "}
+                      direkt på position:
+                    </span>
+                    {formationSlots.map((slot) => {
+                      const occ = pitchMetrics.find(
+                        (m) =>
+                          (m.player.pitchSlotIndex ??
+                            (m.player.isGoalkeeper ? 0 : -1)) === slot.slotIndex
+                      )?.player;
+                      return (
+                        <button
+                          key={slot.slotIndex}
+                          type="button"
+                          onClick={() =>
+                            handleMovePlayerToSlot(
+                              selectedInIds[0],
+                              slot.slotIndex
+                            )
+                          }
+                          className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 font-mono-cm font-extrabold text-[10px] transition active:scale-95"
+                        >
+                          {slot.code}
+                          {occ ? ` (ut: ${occ.name})` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="space-y-1 font-mono-cm text-xs">
                   {subPairsSummary && (

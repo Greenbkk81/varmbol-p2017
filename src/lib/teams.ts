@@ -1,6 +1,6 @@
 import { list, put } from "@vercel/blob";
 import crypto from "node:crypto";
-import { INITIAL_CUP_SETUP } from "./cup-plan";
+import { INITIAL_KAIK_SETUP } from "./cup-plan";
 import { createInitialMatchState } from "./match-engine";
 import {
   LiveSyncSnapshot,
@@ -233,10 +233,10 @@ export function buildInitialSnapshotForTeam(
 ): LiveSyncSnapshot {
   if (entry.id === VFC_P2017_TEAM_ID) {
     const matchState = createInitialMatchState(
-      INITIAL_CUP_SETUP.roster,
-      INITIAL_CUP_SETUP.config,
-      INITIAL_CUP_SETUP.pitchIds,
-      INITIAL_CUP_SETUP.goalkeeperId
+      INITIAL_KAIK_SETUP.roster,
+      INITIAL_KAIK_SETUP.config,
+      INITIAL_KAIK_SETUP.pitchIds,
+      INITIAL_KAIK_SETUP.goalkeeperId
     );
     return {
       version: 1,
@@ -244,7 +244,7 @@ export function buildInitialSnapshotForTeam(
       teamId: entry.id,
       teamProfile: toPublicTeamProfile(entry),
       controllerId: "seed",
-      roster: INITIAL_CUP_SETUP.roster,
+      roster: INITIAL_KAIK_SETUP.roster,
       matchState,
       savedMatches: [],
     };

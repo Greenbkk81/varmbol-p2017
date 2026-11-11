@@ -11,10 +11,10 @@ export const CUP_SQUAD_IDS = [
   "p-gabriel", "p-abdoulaye", "p-kasper", "p-charlie", "p-ebbe",
 ];
 
-// Dagens trupp mot KAIK (7 anmälda i Svenskalag + Jack & Amr inlånade från P2018 = 9 spelare)
+// Dagens trupp mot KAIK (7 anmälda i Svenskalag där Bilel ersätter Oliver + Jack & Amr inlånade från P2018 = 9 spelare)
 export const KAIK_SQUAD_IDS = [
   "p-oscar",
-  "p-oliver",
+  "p-bilel",
   "p-edvin",
   "p-scott",
   "p-holger",
@@ -174,6 +174,8 @@ export function buildKaikSetup(
     goalkeeperId: resolveId("p-oscar"),
   };
 }
+
+export const INITIAL_KAIK_SETUP = buildKaikSetup(DEFAULT_ROSTER, "1-4-1");
 
 // Uppdatera dagens sparade cupmatcher utan att nollställa spelad tid.
 export function upgradeCupDuration(state: MatchState): MatchState {

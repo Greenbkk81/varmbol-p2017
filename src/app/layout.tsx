@@ -1,28 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import {
-  Barlow_Condensed,
-  Chakra_Petch,
-  JetBrains_Mono,
-} from "next/font/google";
 import "./globals.css";
-
-const chakra = Chakra_Petch({
-  variable: "--font-chakra",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-});
-
-const barlow = Barlow_Condensed({
-  variable: "--font-barlow",
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-});
-
-const jetbrains = JetBrains_Mono({
-  variable: "--font-jetbrains",
-  subsets: ["latin"],
-  weight: ["500", "700", "800"],
-});
 
 export const metadata: Metadata = {
   title: "SIDLINJEN · CM Tactical Match Engine",
@@ -52,10 +29,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="sv"
-      className={`${chakra.variable} ${barlow.variable} ${jetbrains.variable} h-full antialiased dark`}
-    >
+    <html lang="sv" className="h-full antialiased dark">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@500;700;800&display=swap"
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-[#050c18] text-[#e8f0fe]">
         {children}
       </body>

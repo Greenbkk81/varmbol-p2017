@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 :root {
+  --font-chakra: "Chakra Petch", system-ui, -apple-system, sans-serif;
+  --font-barlow: "Barlow Condensed", system-ui, -apple-system, sans-serif;
+  --font-jetbrains: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --cm-bg-deep: #050c18;
   --cm-panel: #0b182e;
   --cm-panel-header: #00478f;

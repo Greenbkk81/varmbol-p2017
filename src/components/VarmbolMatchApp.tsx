@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   Check,
   Clock,
+  Compass,
   KeyRound,
   LayoutGrid,
   ListFilter,
@@ -37,6 +38,7 @@ import {
 } from "@/lib/default-roster";
 import {
   buildCupSetup,
+  buildKaikSetup,
   CUP_COACH_NOTES,
   CUP_MATCHES,
   FORMATION_COACH_NOTES,
@@ -70,6 +72,7 @@ import { mergeCupRows } from "@/lib/cup-totals";
 import { playSound, resumeSound, SoundCue } from "@/lib/sounds";
 import { GuideView } from "./GuideView";
 import { PositionTime, summarizeRoleZones } from "./PositionTime";
+import { TacticalMovementView } from "./TacticalMovementView";
 import {
   AuthRole,
   ComputedPlayerMetrics,
@@ -541,7 +544,7 @@ export function VarmbolMatchApp({
 
   const [hydrated, setHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "match" | "setup" | "stats" | "guide"
+    "match" | "tactics" | "setup" | "stats" | "guide"
   >(() => (initialRoster.length === 0 ? "setup" : "match"));
   // I matchvyn kan man se 2D Taktikplan ("pitch") eller Klassisk CM Tabell ("table")
   const [pitchViewMode, setPitchViewMode] = useState<"pitch" | "table">(
@@ -635,14 +638,11 @@ export function VarmbolMatchApp({
       if (isReadOnlyFollower) {
         setSyncMode("follow");
       } else {
-        const rawSyncMode = localStorage.getItem(storageKeys.syncMode);
         const urlMode = new URLSearchParams(window.location.search).get("mode");
         if (urlMode === "follow" || urlMode === "live") {
           setSyncMode("follow");
-        } else if (urlMode === "control" || urlMode === "styr") {
+        } else {
           setSyncMode("control");
-        } else if (rawSyncMode === "follow" || rawSyncMode === "control") {
-          setSyncMode(rawSyncMode);
         }
       }
 
@@ -1241,35 +1241,107 @@ export function VarmbolMatchApp({
   }
 
   function handleChangeFormation(newFormation: TacticalFormation) {
-    if (isFollowing) return;
+    if (isReadOnlyFollower) return;
+    if (syncMode === "follow") {
+      setSyncMode("control");
+    }
+    forceNextPushRef.current = true;
     const ts = Date.now();
     setNow(ts);
     setMatchState((prev) => {
-      if (prev.config.formation === newFormation) return prev;
-      const withSnap = pushUndoSnapshot(prev, `Formation ${newFormation}`);
+      if (prev.config.formation === newFormation && prev.config.format === "7v7") {
+        return prev;
+      }
+      const withSnap = pushUndoSnapshot(prev, `Formation ${newFormation}`, ts);
       const committed = commitRunningTime(withSnap, ts);
+      const isPreKickoff =
+        getTotalMatchElapsedMs(committed, ts) === 0 &&
+        committed.currentPeriod === 1 &&
+        committed.status === "paused";
       return {
         ...committed,
-        config: { ...committed.config, formation: newFormation },
-        logs: [
-          {
-            id: `log-form-${ts}`,
-            period: committed.currentPeriod,
-            matchTimeMs: getTotalMatchElapsedMs(committed, ts),
-            timestamp: ts,
-            type: "formation",
-            playersOut: [],
-            playersIn: [],
-            note: `${prev.config.formation} → ${newFormation}`,
-          },
-          ...committed.logs,
-        ],
+        config: { ...committed.config, format: "7v7", formation: newFormation },
+        logs: isPreKickoff
+          ? committed.logs
+          : [
+              {
+                id: `log-form-${ts}`,
+                period: committed.currentPeriod,
+                matchTimeMs: getTotalMatchElapsedMs(committed, ts),
+                timestamp: ts,
+                type: "formation",
+                playersOut: [],
+                playersIn: [],
+                note: `${prev.config.formation} → ${newFormation}`,
+              },
+              ...committed.logs,
+            ],
       };
     });
     setDraftConfig((prev) => ({
       ...prev,
+      format: "7v7",
       formation: newFormation,
     }));
+  }
+
+  function handleSelectKaikFormation(fmt: "1-4-1" | "1-1-3-1") {
+    if (isReadOnlyFollower) return;
+    const title =
+      fmt === "1-1-3-1"
+        ? "Träningsmatch mot KAIK · 1-1-3-1 (Jocke)"
+        : "Träningsmatch mot KAIK · 1-4-1 (Lars)";
+    handleChangeFormation(fmt);
+    setMatchState((prev) => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        format: "7v7",
+        formation: fmt,
+        opponent: "Katrineholms AIK",
+        eventTitle: title,
+      },
+    }));
+    setDraftConfig((prev) => ({
+      ...prev,
+      format: "7v7",
+      formation: fmt,
+      opponent: "Katrineholms AIK",
+      eventTitle: title,
+    }));
+  }
+
+  function handleApplyKaikSquad9Players() {
+    if (isReadOnlyFollower) return;
+    if (syncMode === "follow") {
+      setSyncMode("control");
+    }
+    forceNextPushRef.current = true;
+    const fmt: "1-4-1" | "1-1-3-1" =
+      currentFormation === "1-1-3-1" ? "1-1-3-1" : "1-4-1";
+    const setup = buildKaikSetup(roster, fmt);
+    setRoster(setup.roster);
+    setDraftConfig((prev) => ({
+      ...prev,
+      ...setup.config,
+      stintMinutes: resolveStintMinutes(prev),
+    }));
+    setSetupPitchIds(setup.pitchIds);
+    setSetupGkId(setup.goalkeeperId);
+    const ts = Date.now();
+    if (getTotalMatchElapsedMs(matchState, ts) === 0) {
+      setMatchState(
+        createInitialMatchState(
+          setup.roster,
+          {
+            ...setup.config,
+            stintMinutes: resolveStintMinutes(matchState.config),
+          },
+          setup.pitchIds,
+          setup.goalkeeperId
+        )
+      );
+    }
   }
 
   function handleToggleClock() {
@@ -2121,9 +2193,20 @@ export function VarmbolMatchApp({
                   <span className="font-display font-extrabold text-base sm:text-xl tracking-wider uppercase text-white drop-shadow truncate">
                     {teamProfile.clubName} · {teamProfile.teamName}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[10px] uppercase tracking-wider shrink-0">
-                    {currentFormation}
-                  </span>
+                  <button
+                    type="button"
+                    disabled={isReadOnlyFollower}
+                    onClick={() =>
+                      handleChangeFormation(
+                        currentFormation === "1-4-1" ? "1-1-3-1" : "1-4-1"
+                      )
+                    }
+                    title="Tryck för att växla direkt mellan 1-4-1 (Lars) och 1-1-3-1 (Jocke)"
+                    className="px-2 py-0.5 rounded bg-[#facc15] hover:bg-yellow-300 active:scale-95 text-slate-950 font-mono-cm font-extrabold text-[10px] uppercase tracking-wider shrink-0 flex items-center gap-1 shadow transition"
+                  >
+                    <span>{currentFormation}</span>
+                    <span className="text-[9px] opacity-80">⇄</span>
+                  </button>
                 </div>
                 <div className="text-[11px] text-sky-100/90 font-medium truncate">
                   {matchState.config.eventTitle ||
@@ -2280,7 +2363,7 @@ export function VarmbolMatchApp({
           <button
             type="button"
             onClick={() => setActiveTab("match")}
-            className={`flex-1 py-1.5 px-2.5 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1.5 border transition ${
+            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
               activeTab === "match"
                 ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
                 : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
@@ -2295,8 +2378,21 @@ export function VarmbolMatchApp({
 
           <button
             type="button"
+            onClick={() => setActiveTab("tactics")}
+            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
+              activeTab === "tactics"
+                ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
+                : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5 shrink-0" />
+            <span>Rörelse</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab("setup")}
-            className={`flex-1 py-1.5 px-2.5 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1.5 border transition ${
+            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
               activeTab === "setup"
                 ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
                 : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
@@ -2309,7 +2405,7 @@ export function VarmbolMatchApp({
           <button
             type="button"
             onClick={() => setActiveTab("stats")}
-            className={`flex-1 py-1.5 px-2.5 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1.5 border transition ${
+            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
               activeTab === "stats"
                 ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
                 : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
@@ -2322,7 +2418,7 @@ export function VarmbolMatchApp({
           <button
             type="button"
             onClick={() => setActiveTab("guide")}
-            className={`flex-1 py-1.5 px-2.5 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1.5 border transition ${
+            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
               activeTab === "guide"
                 ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
                 : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
@@ -2733,7 +2829,7 @@ export function VarmbolMatchApp({
                           left: `${slot.xPct}%`,
                           top: `${slot.yPct}%`,
                         }}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 z-20"
+                        className="absolute -translate-x-1/2 -translate-y-1/2 z-20 transition-all duration-300 ease-out"
                       >
                         <button
                           type="button"
@@ -3283,8 +3379,8 @@ export function VarmbolMatchApp({
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between gap-2 bg-[#166534] px-3 py-1.5 border-y border-black/30">
-                  <div className="flex items-center gap-2 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-[#166534] px-3 py-1.5 border-y border-black/30">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     {teamProfile.logoUrl ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
@@ -3300,14 +3396,49 @@ export function VarmbolMatchApp({
                     <span className="font-display font-extrabold text-xs sm:text-sm uppercase tracking-wide text-white truncate">
                       {teamProfile.clubName}
                     </span>
-                    <span className="font-mono-cm font-bold text-[11px] text-white/80 shrink-0">
-                      {currentFormation}
+
+                    {/* Direkt 1-klicks toggle mellan 1-4-1 (Lars) och 1-1-3-1 (Jocke) på planlisten */}
+                    <div className="flex items-center bg-black/45 rounded-lg p-0.5 border border-white/25 ml-1">
+                      <button
+                        type="button"
+                        disabled={isReadOnlyFollower}
+                        onClick={() => handleChangeFormation("1-4-1")}
+                        className={`px-2 py-0.5 rounded-md font-mono-cm font-extrabold text-[10px] uppercase transition active:scale-95 ${
+                          currentFormation === "1-4-1"
+                            ? "bg-[#facc15] text-slate-950 shadow"
+                            : "text-white/85 hover:text-white"
+                        }`}
+                      >
+                        1-4-1 (Lars)
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isReadOnlyFollower}
+                        onClick={() => handleChangeFormation("1-1-3-1")}
+                        className={`px-2 py-0.5 rounded-md font-mono-cm font-extrabold text-[10px] uppercase transition active:scale-95 ${
+                          currentFormation === "1-1-3-1"
+                            ? "bg-[#facc15] text-slate-950 shadow"
+                            : "text-white/85 hover:text-white"
+                        }`}
+                      >
+                        1-1-3-1 (Jocke)
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("tactics")}
+                      className="px-2 py-0.5 rounded bg-black/45 hover:bg-black/65 border border-[#facc15]/60 font-mono-cm font-extrabold text-[10px] uppercase text-[#facc15] flex items-center gap-1"
+                    >
+                      <Compass className="w-3 h-3" />
+                      <span>Rörelse</span>
+                    </button>
+                    <span className="font-mono-cm font-bold text-[11px] text-white tabular-nums">
+                      P{matchState.currentPeriod}{" "}
+                      {formatDurationMmSs(periodElapsedMs)}
                     </span>
                   </div>
-                  <span className="font-mono-cm font-bold text-[11px] text-white tabular-nums shrink-0">
-                    P{matchState.currentPeriod}{" "}
-                    {formatDurationMmSs(periodElapsedMs)}
-                  </span>
                 </div>
 
                 <div className="cm-pitch-surface relative h-[480px] sm:h-[520px]">
@@ -3377,7 +3508,7 @@ export function VarmbolMatchApp({
                         left: `${slot.xPct}%`,
                         top: `${slot.yPct}%`,
                       }}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 z-20"
+                      className="absolute -translate-x-1/2 -translate-y-1/2 z-20 transition-all duration-300 ease-out"
                     >
                       <button
                         type="button"
@@ -3716,26 +3847,36 @@ export function VarmbolMatchApp({
                       Dagens Träningsmatch · Katrineholms AIK (KAIK)
                     </h3>
                     <p className="text-xs text-slate-300 mt-0.5">
-                      Två uppställningar redo att växla mellan: <strong>1-4-1 (Lars · Sidopar V/H)</strong> och <strong>1-1-3-1 (Jockes · Back + Ankare + 3 Mitt + Spets)</strong>. Inlånade från P2018 idag: <strong>Jack</strong> & <strong>Amr</strong>.
+                      9 spelare idag: <strong>Gabriel, Oliver, Holger, Edvin, Oscar, Scott, Abdullahi</strong> + inlånade från P2018: <strong>Jack & Amr</strong>.
                     </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      disabled={isReadOnlyFollower}
+                      onClick={handleApplyKaikSquad9Players}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-display font-extrabold text-xs uppercase shadow"
+                    >
+                      ✓ Ladda dagens 9 spelare (7 + Jack & Amr)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("tactics")}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#0f2547] hover:bg-[#173562] text-[#facc15] border border-[#facc15]/50 font-display font-extrabold text-xs uppercase flex items-center gap-1"
+                    >
+                      <Compass className="w-3.5 h-3.5" />
+                      <span>Se Rörelse & Taktik →</span>
+                    </button>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
-                    disabled={isFollowing}
-                    onClick={() =>
-                      setDraftConfig((c) => ({
-                        ...c,
-                        format: "7v7",
-                        formation: "1-4-1",
-                        opponent: "Katrineholms AIK",
-                        eventTitle: "Träningsmatch mot KAIK · 1-4-1 (Lars)",
-                      }))
-                    }
+                    disabled={isReadOnlyFollower}
+                    onClick={() => handleSelectKaikFormation("1-4-1")}
                     className={`text-left p-3 rounded-lg border transition disabled:opacity-50 ${
-                      draftConfig.formation === "1-4-1"
+                      currentFormation === "1-4-1"
                         ? "bg-[#005cb9]/45 border-[#facc15] shadow"
                         : "bg-[#061224] border-white/10 hover:border-sky-400/40"
                     }`}
@@ -3744,7 +3885,7 @@ export function VarmbolMatchApp({
                       <span className="font-display font-extrabold text-sm uppercase text-white">
                         1-4-1 · Sidopar Vänster & Höger (Lars)
                       </span>
-                      {draftConfig.formation === "1-4-1" && (
+                      {currentFormation === "1-4-1" && (
                         <Check className="w-4 h-4 text-[#facc15]" />
                       )}
                     </div>
@@ -3755,18 +3896,10 @@ export function VarmbolMatchApp({
 
                   <button
                     type="button"
-                    disabled={isFollowing}
-                    onClick={() =>
-                      setDraftConfig((c) => ({
-                        ...c,
-                        format: "7v7",
-                        formation: "1-1-3-1",
-                        opponent: "Katrineholms AIK",
-                        eventTitle: "Träningsmatch mot KAIK · 1-1-3-1 (Jocke)",
-                      }))
-                    }
+                    disabled={isReadOnlyFollower}
+                    onClick={() => handleSelectKaikFormation("1-1-3-1")}
                     className={`text-left p-3 rounded-lg border transition disabled:opacity-50 ${
-                      draftConfig.formation === "1-1-3-1"
+                      currentFormation === "1-1-3-1"
                         ? "bg-[#005cb9]/45 border-[#facc15] shadow"
                         : "bg-[#061224] border-white/10 hover:border-sky-400/40"
                     }`}
@@ -3775,7 +3908,7 @@ export function VarmbolMatchApp({
                       <span className="font-display font-extrabold text-sm uppercase text-white">
                         1-1-3-1 · Back + Ankare + 3 Mitt (Jocke)
                       </span>
-                      {draftConfig.formation === "1-1-3-1" && (
+                      {currentFormation === "1-1-3-1" && (
                         <Check className="w-4 h-4 text-[#facc15]" />
                       )}
                     </div>
@@ -3913,15 +4046,9 @@ export function VarmbolMatchApp({
                       <button
                         key={fmt}
                         type="button"
-                        onClick={() =>
-                          setDraftConfig((c) => ({
-                            ...c,
-                            format: "7v7",
-                            formation: fmt,
-                          }))
-                        }
+                        onClick={() => handleChangeFormation(fmt)}
                         className={`py-1.5 rounded font-mono-cm font-extrabold text-xs border ${
-                          draftConfig.formation === fmt
+                          currentFormation === fmt
                             ? "bg-[#facc15] text-slate-950 border-yellow-200"
                             : "bg-[#061224] text-slate-300 border-white/10"
                         }`}
@@ -4656,6 +4783,21 @@ export function VarmbolMatchApp({
               </section>
             )}
           </div>
+        )}
+
+        {activeTab === "tactics" && (
+          <TacticalMovementView
+            currentFormation={currentFormation}
+            onSelectFormation={handleChangeFormation}
+            pitchPlayers={pitchMetrics.map((m) => ({
+              id: m.player.id,
+              name: m.player.name,
+              number: m.player.number,
+              isGoalkeeper: m.player.isGoalkeeper,
+              pitchSlotIndex: m.player.pitchSlotIndex,
+            }))}
+            disabled={isReadOnlyFollower}
+          />
         )}
 
         {activeTab === "guide" && (

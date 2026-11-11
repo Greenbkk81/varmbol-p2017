@@ -11,6 +11,19 @@ export const CUP_SQUAD_IDS = [
   "p-gabriel", "p-abdoulaye", "p-kasper", "p-charlie", "p-ebbe",
 ];
 
+// Dagens trupp mot KAIK (7 anmälda i Svenskalag + Jack & Amr inlånade från P2018 = 9 spelare)
+export const KAIK_SQUAD_IDS = [
+  "p-oscar",
+  "p-oliver",
+  "p-edvin",
+  "p-scott",
+  "p-holger",
+  "p-gabriel",
+  "p-abdoulaye",
+  "p-jack",
+  "p-amr",
+];
+
 const FIRST_LINEUP = CUP_SQUAD_IDS.slice(0, 7);
 
 export const CUP_MATCHES: CupMatch[] = [
@@ -106,6 +119,61 @@ export function buildCupSetup(match: CupMatch, existingRoster: RosterPlayer[]) {
 }
 
 export const INITIAL_CUP_SETUP = buildCupSetup(CUP_MATCHES[0], DEFAULT_ROSTER);
+
+export function buildKaikSetup(
+  existingRoster: RosterPlayer[],
+  formation: "1-4-1" | "1-1-3-1" = "1-4-1"
+) {
+  const merged = [...existingRoster];
+  for (const player of DEFAULT_ROSTER) {
+    if (!merged.some((existing) => existing.id === player.id)) {
+      const sameName = merged.find(
+        (existing) =>
+          existing.name.trim().toLocaleLowerCase("sv-SE") ===
+          player.name.toLocaleLowerCase("sv-SE")
+      );
+      if (!sameName) merged.push({ ...player });
+    }
+  }
+  const resolveId = (id: string) => {
+    if (merged.some((player) => player.id === id)) return id;
+    const name = DEFAULT_ROSTER.find((player) => player.id === id)?.name;
+    return (
+      merged.find(
+        (player) =>
+          player.name.trim().toLocaleLowerCase("sv-SE") ===
+          name?.toLocaleLowerCase("sv-SE")
+      )?.id ?? id
+    );
+  };
+  const squadIds = new Set(KAIK_SQUAD_IDS.map(resolveId));
+  const roster = merged.map((player) => ({
+    ...player,
+    name: player.id === "p-abdoulaye" ? "Abdullahi" : player.name,
+    activeInSquad: squadIds.has(player.id),
+  }));
+  const pitchIds = KAIK_SQUAD_IDS.slice(0, 7).map(resolveId);
+  const config: MatchConfig = {
+    format: "7v7",
+    formation,
+    periods: 3,
+    periodMinutes: 15,
+    opponent: "Katrineholms AIK",
+    location: "Hemma",
+    eventTitle:
+      formation === "1-1-3-1"
+        ? "Träningsmatch mot KAIK · 1-1-3-1 (Jocke)"
+        : "Träningsmatch mot KAIK · 1-4-1 (Lars)",
+    countGoalkeeperInFairness: false,
+    stintMinutes: 5,
+  };
+  return {
+    roster,
+    config,
+    pitchIds,
+    goalkeeperId: resolveId("p-oscar"),
+  };
+}
 
 // Uppdatera dagens sparade cupmatcher utan att nollställa spelad tid.
 export function upgradeCupDuration(state: MatchState): MatchState {

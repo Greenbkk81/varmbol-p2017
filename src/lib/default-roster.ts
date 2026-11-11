@@ -133,12 +133,12 @@ export const FORMATION_SLOTS: Record<TacticalFormation, TacticalSlot[]> = {
   ],
   "1-1-3-1": [
     { slotIndex: 0, code: "MV", label: "Målvakt", xPct: 50, yPct: 88 },
-    { slotIndex: 1, code: "LIB", label: "Back / Sista man", xPct: 50, yPct: 72 },
-    { slotIndex: 2, code: "DM", label: "Defensiv mitt / Ankare", xPct: 50, yPct: 55 },
-    { slotIndex: 3, code: "VM", label: "Vänsterytter / Mitt", xPct: 18, yPct: 37 },
-    { slotIndex: 4, code: "CM", label: "Central mitt", xPct: 50, yPct: 37 },
-    { slotIndex: 5, code: "HM", label: "Högerytter / Mitt", xPct: 82, yPct: 37 },
-    { slotIndex: 6, code: "FW", label: "Forward / Spets", xPct: 50, yPct: 17 },
+    { slotIndex: 1, code: "LIB", label: "Back / Sista man", xPct: 50, yPct: 73 },
+    { slotIndex: 2, code: "VM", label: "Vänsterytter / Mitt", xPct: 18, yPct: 35 },
+    { slotIndex: 3, code: "DM", label: "Defensiv mitt / Ankare", xPct: 50, yPct: 56 },
+    { slotIndex: 4, code: "CM", label: "Central mitt", xPct: 50, yPct: 35 },
+    { slotIndex: 5, code: "HM", label: "Högerytter / Mitt", xPct: 82, yPct: 35 },
+    { slotIndex: 6, code: "FW", label: "Forward / Spets", xPct: 50, yPct: 16 },
   ],
   "2-3-1": [
     { slotIndex: 0, code: "MV", label: "Målvakt", xPct: 50, yPct: 88 },

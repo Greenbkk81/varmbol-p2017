@@ -299,6 +299,27 @@ export function buildInitialSnapshotForTeam(
   };
 }
 
+function migrateLegacyVfcSnapshot(
+  snapshot: LiveSyncSnapshot
+): LiveSyncSnapshot {
+  if (
+    snapshot.teamId === VFC_P2017_TEAM_ID &&
+    snapshot.matchState?.config?.opponent === "Katrineholms AIK"
+  ) {
+    return {
+      ...snapshot,
+      roster: INITIAL_KAIK_SETUP.roster,
+      matchState: createInitialMatchState(
+        INITIAL_KAIK_SETUP.roster,
+        INITIAL_KAIK_SETUP.config,
+        INITIAL_KAIK_SETUP.pitchIds,
+        INITIAL_KAIK_SETUP.goalkeeperId
+      ),
+    };
+  }
+  return snapshot;
+}
+
 export async function readTeamSnapshot(
   teamId: string,
   registry?: TeamRegistry
@@ -319,11 +340,13 @@ export async function readTeamSnapshot(
   if (!hasBlobToken()) {
     const existing = memoryMap.get(team.id);
     if (existing) {
-      return {
+      const migrated = migrateLegacyVfcSnapshot({
         ...existing,
         teamId: team.id,
         teamProfile: toPublicTeamProfile(team),
-      };
+      });
+      memoryMap.set(team.id, migrated);
+      return migrated;
     }
     const seeded = buildInitialSnapshotForTeam(team);
     memoryMap.set(team.id, seeded);
@@ -336,7 +359,7 @@ export async function readTeamSnapshot(
       blobs.find((item) => item.pathname === blobPath) ?? blobs[0];
     if (!exact) {
       const mem = memoryMap.get(team.id);
-      if (mem) return mem;
+      if (mem) return migrateLegacyVfcSnapshot(mem);
       const seeded = buildInitialSnapshotForTeam(team);
       memoryMap.set(team.id, seeded);
       return seeded;
@@ -345,14 +368,16 @@ export async function readTeamSnapshot(
       cache: "no-store",
     });
     if (!res.ok) {
-      return memoryMap.get(team.id) ?? buildInitialSnapshotForTeam(team);
+      return (
+        memoryMap.get(team.id) ?? buildInitialSnapshotForTeam(team)
+      );
     }
     const snapshot = (await res.json()) as LiveSyncSnapshot;
-    const enriched: LiveSyncSnapshot = {
+    const enriched = migrateLegacyVfcSnapshot({
       ...snapshot,
       teamId: team.id,
       teamProfile: toPublicTeamProfile(team),
-    };
+    });
     memoryMap.set(team.id, enriched);
     return enriched;
   } catch {

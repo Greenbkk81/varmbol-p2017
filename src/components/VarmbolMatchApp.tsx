@@ -113,8 +113,8 @@ const DEFAULT_TEAM_PROFILE: TeamProfile = {
 function getStorageKeys(teamId: string) {
   if (!teamId || teamId === "vfc-p2017") {
     return {
-      roster: "varmbol_p2017_roster_v4",
-      activeMatch: "varmbol_p2017_active_match_v4",
+      roster: "varmbol_p2017_roster_v5",
+      activeMatch: "varmbol_p2017_active_match_v5",
       history: "varmbol_p2017_history_v2",
       sound: "varmbol_p2017_sound_v1",
       syncMode: "varmbol_p2017_sync_mode_v2",
@@ -252,14 +252,14 @@ function ensureVfcGuests(
   if (!isVfcDefault) return normalized;
   const guests: RosterPlayer[] = [
     {
-      id: "p-jack",
-      name: "Jack",
+      id: "p-mattheo",
+      name: "Mattheo",
       preferredRole: "Inlånad P2018",
       activeInSquad: true,
     },
     {
-      id: "p-amr",
-      name: "Amr",
+      id: "p-charlie",
+      name: "Charlie",
       preferredRole: "Inlånad P2018",
       activeInSquad: true,
     },
@@ -1334,8 +1334,8 @@ export function VarmbolMatchApp({
     if (isReadOnlyFollower) return;
     const title =
       fmt === "1-1-3-1"
-        ? "Träningsmatch mot KAIK · 1-1-3-1 (Jocke)"
-        : "Träningsmatch mot KAIK · 1-4-1 (Lars)";
+        ? "IFK Norrköping (11:30 Teknikhallen) · 1-1-3-1 (Jocke)"
+        : "IFK Norrköping (11:30 Teknikhallen) · 1-4-1 (Lars)";
     handleChangeFormation(fmt);
     setMatchState((prev) => ({
       ...prev,
@@ -1343,7 +1343,10 @@ export function VarmbolMatchApp({
         ...prev.config,
         format: "7v7",
         formation: fmt,
-        opponent: "Katrineholms AIK",
+        periods: 3,
+        periodMinutes: 20,
+        opponent: "IFK Norrköping",
+        location: "Borta",
         eventTitle: title,
       },
     }));
@@ -1351,7 +1354,10 @@ export function VarmbolMatchApp({
       ...prev,
       format: "7v7",
       formation: fmt,
-      opponent: "Katrineholms AIK",
+      periods: 3,
+      periodMinutes: 20,
+      opponent: "IFK Norrköping",
+      location: "Borta",
       eventTitle: title,
     }));
   }
@@ -1365,6 +1371,23 @@ export function VarmbolMatchApp({
     const fmt: "1-4-1" | "1-1-3-1" =
       currentFormation === "1-1-3-1" ? "1-1-3-1" : "1-4-1";
     const setup = buildKaikSetup(roster, fmt);
+    const ts = Date.now();
+    const elapsedMs = getTotalMatchElapsedMs(matchState, ts);
+    if (elapsedMs > 0 && matchState.status !== "finished") {
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm(
+          `Klockan har gått ${formatDurationMmSs(
+            elapsedMs
+          )} i matchen mot ${matchState.config.opponent}. Vill du nollställa till IFK Norrköping (3×20 min) med dagens 9 spelare?`
+        )
+      ) {
+        return;
+      }
+    }
+    if (elapsedMs > 20_000) {
+      rememberMatch(matchState, ts);
+    }
     setRoster(setup.roster);
     setDraftConfig((prev) => ({
       ...prev,
@@ -1373,20 +1396,21 @@ export function VarmbolMatchApp({
     }));
     setSetupPitchIds(setup.pitchIds);
     setSetupGkId(setup.goalkeeperId);
-    const ts = Date.now();
-    if (getTotalMatchElapsedMs(matchState, ts) === 0) {
-      setMatchState(
-        createInitialMatchState(
-          setup.roster,
-          {
-            ...setup.config,
-            stintMinutes: resolveStintMinutes(matchState.config),
-          },
-          setup.pitchIds,
-          setup.goalkeeperId
-        )
-      );
-    }
+    setMatchState(
+      createInitialMatchState(
+        setup.roster,
+        {
+          ...setup.config,
+          stintMinutes: resolveStintMinutes(matchState.config),
+        },
+        setup.pitchIds,
+        setup.goalkeeperId
+      )
+    );
+    clearSubSelection();
+    setGoalPick(null);
+    periodAlertedRef.current = null;
+    stintAlertedKeyRef.current = "";
   }
 
   function handleToggleClock() {
@@ -3985,10 +4009,10 @@ export function VarmbolMatchApp({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="font-display font-extrabold text-sm sm:text-base uppercase tracking-wider text-[#facc15]">
-                      Dagens Träningsmatch · Katrineholms AIK (KAIK)
+                      Dagens Träningsmatch · IFK Norrköping (11:30 Teknikhallen)
                     </h3>
                     <p className="text-xs text-slate-300 mt-0.5">
-                      9 spelare idag: <strong>Gabriel, Bilel, Holger, Edvin, Oscar, Scott, Abdullahi</strong> + inlånade från P2018: <strong>Jack & Amr</strong> (Oliver utgår).
+                      Samling 11:00 i Teknikhallen (Norrköpings Idrottspark, läktaren gäller före matchstart) · Matchstart 11:30 · 3 × 20 min (konstgräs utan granulat). 9 spelare (7+2): <strong>Holger, Gabriel, Scott, Edvin, Oliver, Oscar, Abdullahi</strong> + P2018: <strong>Mattheo &amp; Charlie</strong>.
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -3998,7 +4022,7 @@ export function VarmbolMatchApp({
                       onClick={handleApplyKaikSquad9Players}
                       className="px-2.5 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-display font-extrabold text-xs uppercase shadow"
                     >
-                      ✓ Ladda dagens 9 spelare (7 + Jack & Amr)
+                      ✓ Ladda dagens 9 spelare (7 + Mattheo &amp; Charlie)
                     </button>
                     <button
                       type="button"

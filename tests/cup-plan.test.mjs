@@ -14,7 +14,7 @@ execFileSync(process.execPath, [resolve('typescript/bin/tsc'),
   '--module', 'commonjs', '--target', 'es2020', '--skipLibCheck', '--strict',
 ], { cwd: fileURLToPath(new URL('..', import.meta.url)) });
 after(() => rmSync(output, { recursive: true, force: true }));
-const { buildCupSetup, CUP_MATCHES, INITIAL_CUP_SETUP, upgradeCupDuration } = (await import(pathToFileURL(path.join(output, 'cup-plan.js')))).default;
+const { buildCupSetup, buildNorrkopingSetup, CUP_MATCHES, INITIAL_CUP_SETUP, INITIAL_KAIK_SETUP, upgradeCupDuration } = (await import(pathToFileURL(path.join(output, 'cup-plan.js')))).default;
 const { DEFAULT_ROSTER } = (await import(pathToFileURL(path.join(output, 'default-roster.js')))).default;
 const { createInitialMatchState, suggestSubstitutions, executeMultiSubstitution, undoLastAction, getCurrentPeriodElapsedMs, computePlayerMetrics } = (await import(pathToFileURL(path.join(output, 'match-engine.js')))).default;
 const create = (setup) => createInitialMatchState(setup.roster, setup.config, setup.pitchIds, setup.goalkeeperId);
@@ -153,4 +153,25 @@ test('first period and halftime saves retain elapsed time and become a single pe
     assert.equal(halftime.periodElapsedMs, minutes * 60000);
     assert.equal(halftime.config.periods, 1);
   }
+});
+
+test('Norrköping training match setup configures 3x20 min away and 9 squad players including Mattheo and Charlie', () => {
+  const match = create(INITIAL_KAIK_SETUP);
+  assert.equal(match.config.opponent, 'IFK Norrköping');
+  assert.equal(match.config.location, 'Borta');
+  assert.equal(match.config.periods, 3);
+  assert.equal(match.config.periodMinutes, 20);
+  assert.equal(match.players.length, 9);
+  assert.deepEqual(
+    match.players.filter(p => p.onPitch).sort((a, b) => a.pitchSlotIndex - b.pitchSlotIndex).map(p => p.name),
+    ['Oscar', 'Oliver', 'Edvin', 'Scott', 'Holger', 'Gabriel', 'Abdullahi']
+  );
+  assert.deepEqual(
+    match.players.filter(p => !p.onPitch).map(p => p.name).sort(),
+    ['Charlie', 'Mattheo']
+  );
+  const jockeSetup = buildNorrkopingSetup(DEFAULT_ROSTER, '1-1-3-1');
+  assert.equal(jockeSetup.config.formation, '1-1-3-1');
+  assert.equal(jockeSetup.config.periods, 3);
+  assert.equal(jockeSetup.config.periodMinutes, 20);
 });

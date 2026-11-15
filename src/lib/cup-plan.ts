@@ -11,7 +11,20 @@ export const CUP_SQUAD_IDS = [
   "p-gabriel", "p-abdoulaye", "p-kasper", "p-charlie", "p-ebbe",
 ];
 
-// Dagens trupp mot KAIK (7 anmälda i Svenskalag där Bilel ersätter Oliver + Jack & Amr inlånade från P2018 = 9 spelare)
+// Dagens trupp mot IFK Norrköping (7 anmälda P2017 + Mattheo & Charlie från P2018 = 9 spelare)
+export const NORRKOPING_SQUAD_IDS = [
+  "p-oscar",
+  "p-oliver",
+  "p-edvin",
+  "p-scott",
+  "p-holger",
+  "p-gabriel",
+  "p-abdoulaye",
+  "p-mattheo",
+  "p-charlie",
+];
+
+// Tidigare trupp mot KAIK (bevarad som referens)
 export const KAIK_SQUAD_IDS = [
   "p-oscar",
   "p-bilel",
@@ -120,7 +133,7 @@ export function buildCupSetup(match: CupMatch, existingRoster: RosterPlayer[]) {
 
 export const INITIAL_CUP_SETUP = buildCupSetup(CUP_MATCHES[0], DEFAULT_ROSTER);
 
-export function buildKaikSetup(
+export function buildNorrkopingSetup(
   existingRoster: RosterPlayer[],
   formation: "1-4-1" | "1-1-3-1" = "1-4-1"
 ) {
@@ -146,24 +159,24 @@ export function buildKaikSetup(
       )?.id ?? id
     );
   };
-  const squadIds = new Set(KAIK_SQUAD_IDS.map(resolveId));
+  const squadIds = new Set(NORRKOPING_SQUAD_IDS.map(resolveId));
   const roster = merged.map((player) => ({
     ...player,
     name: player.id === "p-abdoulaye" ? "Abdullahi" : player.name,
     activeInSquad: squadIds.has(player.id),
   }));
-  const pitchIds = KAIK_SQUAD_IDS.slice(0, 7).map(resolveId);
+  const pitchIds = NORRKOPING_SQUAD_IDS.slice(0, 7).map(resolveId);
   const config: MatchConfig = {
     format: "7v7",
     formation,
     periods: 3,
-    periodMinutes: 15,
-    opponent: "Katrineholms AIK",
-    location: "Hemma",
+    periodMinutes: 20,
+    opponent: "IFK Norrköping",
+    location: "Borta",
     eventTitle:
       formation === "1-1-3-1"
-        ? "Träningsmatch mot KAIK · 1-1-3-1 (Jocke)"
-        : "Träningsmatch mot KAIK · 1-4-1 (Lars)",
+        ? "IFK Norrköping (11:30 Teknikhallen) · 1-1-3-1 (Jocke)"
+        : "IFK Norrköping (11:30 Teknikhallen) · 1-4-1 (Lars)",
     countGoalkeeperInFairness: false,
     stintMinutes: 5,
   };
@@ -175,7 +188,9 @@ export function buildKaikSetup(
   };
 }
 
-export const INITIAL_KAIK_SETUP = buildKaikSetup(DEFAULT_ROSTER, "1-4-1");
+export const INITIAL_NORRKOPING_SETUP = buildNorrkopingSetup(DEFAULT_ROSTER, "1-4-1");
+export const buildKaikSetup = buildNorrkopingSetup;
+export const INITIAL_KAIK_SETUP = INITIAL_NORRKOPING_SETUP;
 
 // Uppdatera dagens sparade cupmatcher utan att nollställa spelad tid.
 export function upgradeCupDuration(state: MatchState): MatchState {

@@ -2262,7 +2262,7 @@ export function VarmbolMatchApp({
       <header className="sticky top-0 z-30 bg-[#050e1d]/95 backdrop-blur-md border-b-2 border-[#facc15]/80 shadow-[0_6px_30px_rgba(0,0,0,0.85)]">
         {(!focusMode || activeTab !== "match") && (
         <div className="cm-header-bar px-3 py-2">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2">
             {/* Klubbvapen & Titel */}
             <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded bg-white/10 p-1 flex items-center justify-center border border-[#facc15]/70 shadow-inner shrink-0">
@@ -2310,7 +2310,7 @@ export function VarmbolMatchApp({
             </div>
 
             {/* Tränare + Live-synk + Admin/Lag */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div className="flex items-center justify-between sm:justify-end gap-1.5 sm:gap-2 shrink-0">
               {isReadOnlyFollower ? (
                 <div className="px-2 py-1 rounded bg-emerald-400/20 border border-emerald-400/50 font-mono-cm text-[10px] font-extrabold uppercase text-emerald-200 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -2399,52 +2399,54 @@ export function VarmbolMatchApp({
                 </div>
               </div>
 
-              {onOpenAdminModal && (
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                {onOpenAdminModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenAdminModal}
+                    className={`px-2 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-1 transition active:scale-95 ${
+                      authRole === "superadmin"
+                        ? "bg-[#facc15] text-slate-950 border-yellow-200 shadow"
+                        : "bg-[#040d1a]/80 border-sky-300/30 text-sky-200 hover:text-white"
+                    }`}
+                    title={
+                      authRole === "superadmin"
+                        ? "Admin: Skapa lag, WhatsApp-inbjudningar & byt aktivt lag"
+                        : "Lagprofil & byt lagkod"
+                    }
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>{authRole === "superadmin" ? "Admin" : "Lagkod"}</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={onOpenAdminModal}
+                  onClick={handleToggleFocusMode}
                   className={`px-2 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-1 transition active:scale-95 ${
-                    authRole === "superadmin"
-                      ? "bg-[#facc15] text-slate-950 border-yellow-200 shadow"
+                    focusMode
+                      ? "bg-[#facc15] text-slate-950 border-yellow-200"
                       : "bg-[#040d1a]/80 border-sky-300/30 text-sky-200 hover:text-white"
                   }`}
-                  title={
-                    authRole === "superadmin"
-                      ? "Admin: Skapa lag, WhatsApp-inbjudningar & byt aktivt lag"
-                      : "Lagprofil & byt lagkod"
-                  }
+                  title="Fokusläge: klocka, plan och bänk på en enda skärm utan scroll"
                 >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span>{authRole === "superadmin" ? "Admin" : "Lagkod"}</span>
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span>Fokus</span>
                 </button>
-              )}
 
-              <button
-                type="button"
-                onClick={handleToggleFocusMode}
-                className={`px-2 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-1 transition active:scale-95 ${
-                  focusMode
-                    ? "bg-[#facc15] text-slate-950 border-yellow-200"
-                    : "bg-[#040d1a]/80 border-sky-300/30 text-sky-200 hover:text-white"
-                }`}
-                title="Fokusläge: klocka, plan och bänk på en enda skärm utan scroll"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span>Fokus</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSoundEnabled((s) => !s)}
-                className="p-2 rounded bg-[#040d1a]/80 border border-sky-300/30 text-sky-200 hover:text-white active:scale-95"
-                title={soundEnabled ? "Visselsignal på" : "Ljud av"}
-              >
-                {soundEnabled ? (
-                  <Volume2 className="w-4 h-4 text-[#facc15]" />
-                ) : (
-                  <VolumeX className="w-4 h-4 text-slate-400" />
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setSoundEnabled((s) => !s)}
+                  className="p-2 rounded bg-[#040d1a]/80 border border-sky-300/30 text-sky-200 hover:text-white active:scale-95"
+                  title={soundEnabled ? "Visselsignal på" : "Ljud av"}
+                >
+                  {soundEnabled ? (
+                    <Volume2 className="w-4 h-4 text-[#facc15]" />
+                  ) : (
+                    <VolumeX className="w-4 h-4 text-slate-400" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

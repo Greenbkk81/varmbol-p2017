@@ -1,8 +1,10 @@
 # HANDOVER · Värmbols FC P2017 & Matchcoach
 
-**Senast uppdaterad:** 2026-11-12
+**Senast uppdaterad:** 2026-11-15
 **Aktiv URL (bokmärke / hemskärm):** `https://varmbol-p2017.vercel.app/` *(OBS: DNS-ompekning av `varmbol.com` hos Websupport är pausad – vi kör direkt på Vercel-URL:en)*
 **GitHub-repo:** `Greenbkk81/varmbol-p2017` (`main`)
+
+> **Status söndag 2026-11-15:** Appen och Vercel Blob är uppdaterade för dagens bortamatch mot **IFK Norrköping** (start `11:30`, samling `11:00` på läktaren i Teknikhallen, Norrköping, `7v7`, `3 × 20 min`, 9 spelare inkl. inlånade P2018-spelarna **Mattheo** och **Charlie**).
 
 ---
 

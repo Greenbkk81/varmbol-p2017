@@ -2253,7 +2253,7 @@ export function VarmbolMatchApp({
       className={
         focusMode && activeTab === "match"
           ? "h-[100dvh] overflow-hidden flex flex-col bg-[#030914] select-none"
-          : "min-h-screen flex flex-col pb-36 select-none"
+          : "min-h-screen flex flex-col pb-60 select-none"
       }
     >
       {/* ============================================================
@@ -2264,7 +2264,7 @@ export function VarmbolMatchApp({
         <div className="cm-header-bar px-3 py-2">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
             {/* Klubbvapen & Titel */}
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded bg-white/10 p-1 flex items-center justify-center border border-[#facc15]/70 shadow-inner shrink-0">
                 {teamProfile.logoUrl ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
@@ -2279,9 +2279,9 @@ export function VarmbolMatchApp({
                   </span>
                 )}
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-display font-extrabold text-base sm:text-xl tracking-wider uppercase text-white drop-shadow truncate">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-display font-extrabold text-sm sm:text-xl tracking-wider uppercase text-white drop-shadow truncate min-w-0">
                     {teamProfile.clubName} · {teamProfile.teamName}
                   </span>
                   <button

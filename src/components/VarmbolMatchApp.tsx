@@ -5,10 +5,12 @@ import {
   ArrowLeftRight,
   Check,
   Clock,
+  CloudRain,
   Compass,
   KeyRound,
   LayoutGrid,
   ListFilter,
+  Lock,
   Maximize2,
   ArrowLeft,
   MessageCircle,
@@ -23,6 +25,7 @@ import {
   Trophy,
   BookOpen,
   Undo2,
+  Unlock,
   UserCheck,
   UserPlus,
   Users,
@@ -120,6 +123,7 @@ function getStorageKeys(teamId: string) {
       syncMode: "varmbol_p2017_sync_mode_v2",
       deviceId: "varmbol_p2017_device_id_v1",
       focusMode: "varmbol_p2017_focus_mode_v2",
+      sidelineMode: "varmbol_p2017_sideline_mode_v1",
     };
   }
   return {
@@ -130,6 +134,7 @@ function getStorageKeys(teamId: string) {
     syncMode: `team_${teamId}_sync_mode_v1`,
     deviceId: "varmbol_p2017_device_id_v1",
     focusMode: "varmbol_p2017_focus_mode_v2",
+    sidelineMode: "varmbol_p2017_sideline_mode_v1",
   };
 }
 
@@ -607,6 +612,12 @@ export function VarmbolMatchApp({
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
+  const [sidelineMode, setSidelineMode] = useState(false);
+  const [rainLock, setRainLock] = useState(false);
+  const [rainLockPulse, setRainLockPulse] = useState(false);
+  const [rainUnlockHolding, setRainUnlockHolding] = useState(false);
+  const rainHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRainUnlockTapRef = useRef<number>(0);
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const [syncMode, setSyncMode] = useState<SyncMode>(() =>
     isReadOnlyFollower ? "follow" : "control"
@@ -704,6 +715,12 @@ export function VarmbolMatchApp({
       if (urlFocus === "1" || urlFocus === "true") {
         setFocusMode(true);
       }
+
+      const rawSideline = localStorage.getItem(storageKeys.sidelineMode);
+      const urlSideline = new URLSearchParams(window.location.search).get("sideline");
+      if (urlSideline === "1" || urlSideline === "true" || rawSideline === "1") {
+        setSidelineMode(true);
+      }
     } catch {
       // ignore
     }
@@ -770,6 +787,15 @@ export function VarmbolMatchApp({
       // ignore
     }
   }, [focusMode, hydrated, storageKeys]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(storageKeys.sidelineMode, sidelineMode ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [sidelineMode, hydrated, storageKeys]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -1162,8 +1188,54 @@ export function VarmbolMatchApp({
 
   const isFollowing = syncMode === "follow" || isReadOnlyFollower;
 
+  function triggerRainLockReminder(): boolean {
+    if (!rainLock) return false;
+    setRainLockPulse(true);
+    setTimeout(() => setRainLockPulse(false), 650);
+    return true;
+  }
+
+  function handleActivateRainLock() {
+    clearSubSelection();
+    setRainLock(true);
+  }
+
+  function handleRainUnlockPointerDown() {
+    setRainUnlockHolding(true);
+    if (rainHoldTimerRef.current) clearTimeout(rainHoldTimerRef.current);
+    rainHoldTimerRef.current = setTimeout(() => {
+      setRainLock(false);
+      setRainUnlockHolding(false);
+      rainHoldTimerRef.current = null;
+    }, 550);
+  }
+
+  function handleRainUnlockPointerEnd() {
+    setRainUnlockHolding(false);
+    if (rainHoldTimerRef.current) {
+      clearTimeout(rainHoldTimerRef.current);
+      rainHoldTimerRef.current = null;
+    }
+  }
+
+  function handleRainUnlockTap() {
+    const ts = Date.now();
+    if (ts - lastRainUnlockTapRef.current <= 450) {
+      setRainLock(false);
+      setRainUnlockHolding(false);
+      if (rainHoldTimerRef.current) {
+        clearTimeout(rainHoldTimerRef.current);
+        rainHoldTimerRef.current = null;
+      }
+      lastRainUnlockTapRef.current = 0;
+    } else {
+      lastRainUnlockTapRef.current = ts;
+    }
+  }
+
   function takeCoachControl(): boolean {
     if (isReadOnlyFollower) return false;
+    if (triggerRainLockReminder()) return false;
     if (syncMode === "follow") {
       setSyncMode("control");
     }
@@ -1287,6 +1359,7 @@ export function VarmbolMatchApp({
 
   function handleChangeFormation(newFormation: TacticalFormation) {
     if (isReadOnlyFollower) return;
+    if (triggerRainLockReminder()) return;
     if (syncMode === "follow") {
       setSyncMode("control");
     }
@@ -2239,6 +2312,19 @@ export function VarmbolMatchApp({
     });
   }
 
+  function handleToggleSidelineMode() {
+    setSidelineMode((prev) => {
+      const next = !prev;
+      if (next) {
+        if (activeTab !== "match" && activeTab !== "tactics") {
+          setActiveTab("match");
+        }
+        setPitchViewMode("pitch");
+      }
+      return next;
+    });
+  }
+
   const coachList =
     teamProfile.coaches?.length > 0 ? teamProfile.coaches : ["Tränare"];
 
@@ -2422,6 +2508,40 @@ export function VarmbolMatchApp({
 
                 <button
                   type="button"
+                  onClick={handleToggleSidelineMode}
+                  className={`px-2.5 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] sm:text-xs uppercase flex items-center gap-1 transition active:scale-95 ${
+                    sidelineMode
+                      ? "bg-[#facc15] text-slate-950 border-yellow-200 shadow-[0_0_12px_rgba(250,204,21,0.45)]"
+                      : "bg-[#040d1a]/80 border-[#facc15]/50 text-[#facc15] hover:bg-[#0f2547]"
+                  }`}
+                  title="Avskalat Sidlinjeläge: 100 % fokus på Spel & Byten + Taktiktavla med stora regnsäkra knappar"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>⚡ Sidlinjeläge</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    rainLock ? handleRainUnlockTap() : handleActivateRainLock()
+                  }
+                  className={`px-2.5 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] sm:text-xs uppercase flex items-center gap-1 transition active:scale-95 ${
+                    rainLock
+                      ? "bg-sky-400 text-slate-950 border-sky-200 shadow-[0_0_12px_rgba(56,189,248,0.5)]"
+                      : "bg-[#040d1a]/80 border-sky-300/30 text-sky-200 hover:text-white"
+                  }`}
+                  title="Regnlås: låser spelplan och byten mot oavsiktliga vattendropps-tryck i regn"
+                >
+                  {rainLock ? (
+                    <Lock className="w-3.5 h-3.5" />
+                  ) : (
+                    <CloudRain className="w-3.5 h-3.5 text-sky-300" />
+                  )}
+                  <span>{rainLock ? "🔒 Låst" : "🌧️ Regnlås"}</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleToggleFocusMode}
                   className={`px-2 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] uppercase flex items-center gap-1 transition active:scale-95 ${
                     focusMode
@@ -2453,74 +2573,99 @@ export function VarmbolMatchApp({
         )}
 
         {/* CM FLIK-MENY (TACTICS / SQUAD / STATS) */}
-        <div className="max-w-4xl mx-auto px-2 sm:px-3 py-1.5 flex items-center gap-1 sm:gap-1.5 bg-[#061224]">
+        <div
+          className={`${
+            sidelineMode ? "max-w-5xl" : "max-w-4xl"
+          } mx-auto px-2 sm:px-3 py-1.5 flex items-center gap-1.5 bg-[#061224]`}
+        >
           <button
             type="button"
             onClick={() => setActiveTab("match")}
-            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
+            className={`flex-1 ${
+              sidelineMode
+                ? "min-h-[52px] py-2.5 px-3 text-sm sm:text-base rounded-xl font-extrabold"
+                : "py-1.5 px-2 text-xs sm:text-sm rounded font-bold"
+            } font-display uppercase tracking-wider flex items-center justify-center gap-1.5 border transition ${
               activeTab === "match"
                 ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
                 : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
             }`}
           >
-            <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
-            <span>Plan</span>
+            <LayoutGrid className="w-4 h-4 shrink-0" />
+            <span>{sidelineMode ? "⚽ 1. Spel & Byten" : "Plan"}</span>
             {matchState.status === "running" && (
-              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
             )}
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("tactics")}
-            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
+            className={`flex-1 ${
+              sidelineMode
+                ? "min-h-[52px] py-2.5 px-3 text-sm sm:text-base rounded-xl font-extrabold"
+                : "py-1.5 px-2 text-xs sm:text-sm rounded font-bold"
+            } font-display uppercase tracking-wider flex items-center justify-center gap-1.5 border transition ${
               activeTab === "tactics"
                 ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
                 : "bg-[#0b1c36] text-[#facc15] border-[#facc15]/45 hover:bg-[#10274a]"
             }`}
           >
-            <Compass className="w-3.5 h-3.5 shrink-0" />
-            <span>Rörelse</span>
+            <Compass className="w-4 h-4 shrink-0" />
+            <span>{sidelineMode ? "🧭 2. Taktiktavla & Rörelse" : "Rörelse"}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("setup")}
-            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
-              activeTab === "setup"
-                ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
-                : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
-            }`}
-          >
-            <Users className="w-3.5 h-3.5 shrink-0" />
-            <span>Lag</span>
-          </button>
+          {!sidelineMode ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveTab("setup")}
+                className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
+                  activeTab === "setup"
+                    ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
+                    : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 shrink-0" />
+                <span>Lag</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("stats")}
-            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
-              activeTab === "stats"
-                ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
-                : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
-            }`}
-          >
-            <Trophy className="w-3.5 h-3.5 shrink-0" />
-            <span>Tid</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("stats")}
+                className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
+                  activeTab === "stats"
+                    ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
+                    : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
+                }`}
+              >
+                <Trophy className="w-3.5 h-3.5 shrink-0" />
+                <span>Tid</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("guide")}
-            className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
-              activeTab === "guide"
-                ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
-                : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5 shrink-0" />
-            <span>Guide</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("guide")}
+                className={`flex-1 py-1.5 px-2 rounded font-display font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-1 border transition ${
+                  activeTab === "guide"
+                    ? "bg-[#facc15] text-slate-950 border-[#fef08a] shadow-[0_0_15px_rgba(250,204,21,0.4)]"
+                    : "bg-[#0b1c36] text-sky-200 border-sky-500/25 hover:bg-[#10274a]"
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                <span>Guide</span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSidelineMode(false)}
+              className="min-h-[52px] px-3 rounded-xl bg-[#0b1c36] hover:bg-[#10274a] text-sky-200 border border-sky-400/35 font-mono-cm font-extrabold text-[11px] uppercase shrink-0"
+              title="Visa alla 5 flikar (Lag, Tid & Guide)"
+            >
+              Alla flikar
+            </button>
+          )}
 
           {focusMode && activeTab === "match" && (
             <button
@@ -2538,10 +2683,54 @@ export function VarmbolMatchApp({
       <main
         className={
           focusMode && activeTab === "match"
-            ? "max-w-4xl w-full mx-auto px-1.5 py-1.5 flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden"
-            : "max-w-4xl w-full mx-auto px-2.5 sm:px-4 pt-3 flex-1 space-y-3"
+            ? "max-w-5xl w-full mx-auto px-1.5 py-1.5 flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden"
+            : `${
+                sidelineMode ? "max-w-5xl" : "max-w-4xl"
+              } w-full mx-auto px-2.5 sm:px-4 pt-3 flex-1 space-y-3`
         }
       >
+        {/* 🌧️ REGN- & IPAD-LÅS BANNER */}
+        {rainLock && (
+          <div
+            className={`rounded-xl border-2 px-3 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 transition-all ${
+              rainLockPulse
+                ? "bg-amber-400 text-slate-950 border-white scale-[1.01] shadow-[0_0_25px_rgba(250,204,21,0.85)]"
+                : "bg-sky-950/90 text-sky-100 border-sky-300 shadow-[0_0_20px_rgba(56,189,248,0.35)]"
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Lock className="w-5 h-5 shrink-0 text-[#facc15]" />
+              <div className="min-w-0">
+                <div className="font-display font-extrabold text-xs sm:text-sm uppercase tracking-wider text-white">
+                  🔒 Regnlås aktivt — Skyddar mot vattendroppar på skärmen
+                </div>
+                <div className="font-mono-cm text-[11px] text-sky-200">
+                  Spelplan & byten är låsta mot oavsiktliga tryck. Håll inne knappen (0.6s) eller dubbeltryck för att låsa upp.
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onPointerDown={handleRainUnlockPointerDown}
+              onPointerUp={handleRainUnlockPointerEnd}
+              onPointerLeave={handleRainUnlockPointerEnd}
+              onPointerCancel={handleRainUnlockPointerEnd}
+              onClick={handleRainUnlockTap}
+              className={`min-h-[52px] px-4 py-2 rounded-xl font-display font-extrabold text-xs sm:text-sm uppercase tracking-wider border-2 flex items-center gap-2 shrink-0 transition select-none ${
+                rainUnlockHolding
+                  ? "bg-emerald-400 text-slate-950 border-white scale-95"
+                  : "bg-[#facc15] hover:bg-yellow-300 text-slate-950 border-yellow-100 shadow-lg"
+              }`}
+            >
+              <Unlock className="w-4 h-4 shrink-0" />
+              <span>
+                {rainUnlockHolding
+                  ? "Håller inne... Släpp strax!"
+                  : "Håll inne / Dubbeltryck = Lås upp"}
+              </span>
+            </button>
+          </div>
+        )}
         {isFollowing && (
           <div className="rounded-lg bg-emerald-400/15 border border-emerald-400/40 px-2.5 py-1 flex items-center justify-between gap-2 font-mono-cm text-[11px] text-emerald-200 shrink-0">
             <span className="truncate">
@@ -3312,8 +3501,11 @@ export function VarmbolMatchApp({
                 <div className="sm:col-span-4 flex items-center gap-1.5">
                   <button
                     type="button"
+                    disabled={rainLock}
                     onClick={handleToggleClock}
-                    className={`flex-1 py-2.5 px-3 rounded-lg font-display font-extrabold text-sm uppercase tracking-wider flex items-center justify-center gap-1.5 border shadow active:scale-95 transition ${
+                    className={`flex-1 ${
+                      sidelineMode ? "min-h-[52px] text-base" : "py-2.5 text-sm"
+                    } px-3 rounded-lg font-display font-extrabold uppercase tracking-wider flex items-center justify-center gap-1.5 border shadow active:scale-95 transition disabled:opacity-60 ${
                       matchState.status === "running"
                         ? "bg-[#facc15] text-slate-950 border-yellow-200"
                         : "bg-emerald-500 text-slate-950 border-emerald-300"
@@ -3338,8 +3530,11 @@ export function VarmbolMatchApp({
 
                   <button
                     type="button"
+                    disabled={rainLock}
                     onClick={handleEndPeriod}
-                    className="py-2.5 px-2.5 rounded-lg font-display font-bold text-xs uppercase tracking-wider bg-[#102649] hover:bg-[#16325e] text-sky-200 border border-sky-400/30 active:scale-95"
+                    className={`${
+                      sidelineMode ? "min-h-[52px] px-3.5" : "py-2.5 px-2.5"
+                    } rounded-lg font-display font-bold text-xs uppercase tracking-wider bg-[#102649] hover:bg-[#16325e] text-sky-200 border border-sky-400/30 active:scale-95 disabled:opacity-60`}
                   >
                     {matchState.currentPeriod >= matchState.config.periods
                       ? "Slut"
@@ -3349,8 +3544,11 @@ export function VarmbolMatchApp({
                   {matchState.undoStack.length > 0 && (
                     <button
                       type="button"
+                      disabled={rainLock}
                       onClick={handleUndo}
-                      className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-[#facc15] border border-[#facc15]/40 active:scale-95"
+                      className={`${
+                        sidelineMode ? "min-h-[52px] px-3.5" : "p-2.5"
+                      } rounded-lg bg-slate-900 hover:bg-slate-800 text-[#facc15] border border-[#facc15]/40 active:scale-95 disabled:opacity-60 flex items-center justify-center`}
                       title={`Ångra: ${matchState.undoStack[0].label}`}
                     >
                       <Undo2 className="w-4 h-4" />
@@ -3365,24 +3563,26 @@ export function VarmbolMatchApp({
                 </div>
               )}
 
-              {/* Klassisk Championship Manager Gul/Blå Commentary Bar */}
-              <div className="bg-[#facc15] text-slate-950 px-3 py-1.5 border-t border-yellow-200 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="px-1.5 py-0.2 bg-slate-950 text-[#facc15] font-mono-cm font-extrabold text-[10px] rounded shrink-0">
-                    CM LIVE
-                  </span>
-                  <CoachTicker text={cmCommentaryText} />
+              {/* Klassisk Championship Manager Gul/Blå Commentary Bar (döljs i avskalat Sidlinjeläge) */}
+              {!sidelineMode && (
+                <div className="bg-[#facc15] text-slate-950 px-3 py-1.5 border-t border-yellow-200 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="px-1.5 py-0.2 bg-slate-950 text-[#facc15] font-mono-cm font-extrabold text-[10px] rounded shrink-0">
+                      CM LIVE
+                    </span>
+                    <CoachTicker text={cmCommentaryText} />
+                  </div>
+                  {suggestionBanner && (
+                    <button
+                      type="button"
+                      onClick={clearSubSelection}
+                      className="text-[10px] font-mono-cm font-extrabold uppercase underline shrink-0"
+                    >
+                      Rensa
+                    </button>
+                  )}
                 </div>
-                {suggestionBanner && (
-                  <button
-                    type="button"
-                    onClick={clearSubSelection}
-                    className="text-[10px] font-mono-cm font-extrabold uppercase underline shrink-0"
-                  >
-                    Rensa
-                  </button>
-                )}
-              </div>
+              )}
             </section>
 
             {/* TAKTIK- & SNABBBYTESVERKTYGSLÅDA */}
@@ -3394,7 +3594,7 @@ export function VarmbolMatchApp({
                   Förslag:
                 </span>
                 {[1, 2, 3, 4].map((count) => {
-                  const disabled = count > maxMultiSubCount;
+                  const disabled = count > maxMultiSubCount || rainLock;
                   const active =
                     suggestionBanner !== null && suggestionCount === count;
                   return (
@@ -3403,7 +3603,11 @@ export function VarmbolMatchApp({
                       type="button"
                       disabled={disabled}
                       onClick={() => handleSuggestSubs(count)}
-                      className={`px-2.5 py-1 rounded font-mono-cm font-extrabold text-xs border transition active:scale-95 ${
+                      className={`${
+                        sidelineMode
+                          ? "min-h-[52px] px-4 text-sm rounded-xl"
+                          : "px-2.5 py-1 text-xs rounded"
+                      } font-mono-cm font-extrabold border transition active:scale-95 ${
                         disabled
                           ? "bg-slate-900/40 text-slate-600 border-white/5 cursor-not-allowed"
                           : active
@@ -3416,75 +3620,21 @@ export function VarmbolMatchApp({
                   );
                 })}
 
-                <div className="flex items-center bg-[#040a14] rounded p-0.5 border border-sky-400/25">
-                  {STINT_MINUTE_CHOICES.map((mins) => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => handleSetStintMinutes(mins)}
-                      title={`${mins} minuter innan BYT`}
-                      className={`px-1.5 py-0.5 rounded text-[11px] font-mono-cm font-bold transition ${
-                        resolveStintMinutes(matchState.config) === mins
-                          ? "bg-[#facc15] text-slate-950"
-                          : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      {mins}m
-                    </button>
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setGkModalOpen(true)}
-                  className="px-2.5 py-1 rounded font-display font-bold uppercase tracking-wider text-xs bg-amber-400/15 hover:bg-amber-400/25 text-[#facc15] border border-[#facc15]/40 flex items-center gap-1"
-                >
-                  <Shield className="w-3 h-3 fill-[#facc15]" />
-                  <span>MV-krage</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTeamTalkOpen(true)}
-                  className="px-2.5 py-1 rounded font-display font-bold uppercase tracking-wider text-xs bg-[#0f2547] hover:bg-[#173562] text-sky-200 border border-sky-400/30"
-                >
-                  📋 Samling
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("tactics")}
-                  className="px-2.5 py-1 rounded font-display font-extrabold uppercase tracking-wider text-xs bg-[#facc15] hover:bg-yellow-300 text-slate-950 border border-yellow-200 shadow flex items-center gap-1"
-                >
-                  <Compass className="w-3.5 h-3.5" />
-                  <span>Rörelse (Anfall / Försvar)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("setup")}
-                  className="px-2.5 py-1 rounded font-display font-bold uppercase tracking-wider text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40"
-                >
-                  🔧 Ändra Uppställning / Trupp
-                </button>
-              </div>
-
-              {/* Höger: Formationsväljare (1-4-1 default) + Vy-switch (2D Plan / CM Tabell) */}
-              <div className="flex items-center gap-1.5">
-                {matchState.config.format === "7v7" && (
+                {!sidelineMode && (
                   <div className="flex items-center bg-[#040a14] rounded p-0.5 border border-sky-400/25">
-                    {FORMATIONS_7V7.map((fmt) => (
+                    {STINT_MINUTE_CHOICES.map((mins) => (
                       <button
-                        key={fmt}
+                        key={mins}
                         type="button"
-                        onClick={() => handleChangeFormation(fmt)}
-                        className={`px-2 py-0.5 rounded text-[11px] font-mono-cm font-bold transition ${
-                          currentFormation === fmt
-                            ? "bg-[#005cb9] text-white"
+                        onClick={() => handleSetStintMinutes(mins)}
+                        title={`${mins} minuter innan BYT`}
+                        className={`px-1.5 py-0.5 rounded text-[11px] font-mono-cm font-bold transition ${
+                          resolveStintMinutes(matchState.config) === mins
+                            ? "bg-[#facc15] text-slate-950"
                             : "text-slate-400 hover:text-white"
                         }`}
                       >
-                        {fmt}
+                        {mins}m
                       </button>
                     ))}
                   </div>
@@ -3492,15 +3642,103 @@ export function VarmbolMatchApp({
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setPitchViewMode((m) => (m === "pitch" ? "table" : "pitch"))
-                  }
-                  className="px-2.5 py-1 rounded bg-[#040a14] border border-sky-400/30 text-sky-200 hover:text-white text-xs font-display font-bold uppercase tracking-wider flex items-center gap-1"
+                  disabled={rainLock}
+                  onClick={() => setGkModalOpen(true)}
+                  className={`${
+                    sidelineMode ? "min-h-[52px] px-3.5 rounded-xl" : "px-2.5 py-1 rounded"
+                  } font-display font-bold uppercase tracking-wider text-xs bg-amber-400/15 hover:bg-amber-400/25 text-[#facc15] border border-[#facc15]/40 flex items-center gap-1 disabled:opacity-60`}
                 >
-                  <ListFilter className="w-3.5 h-3.5 text-[#facc15]" />
-                  <span>{pitchViewMode === "pitch" ? "Tabell" : "2D Plan"}</span>
+                  <Shield className="w-3.5 h-3.5 fill-[#facc15]" />
+                  <span>MV-krage</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTeamTalkOpen(true)}
+                  className={`${
+                    sidelineMode ? "min-h-[52px] px-3.5 rounded-xl" : "px-2.5 py-1 rounded"
+                  } font-display font-bold uppercase tracking-wider text-xs bg-[#0f2547] hover:bg-[#173562] text-sky-200 border border-sky-400/30`}
+                >
+                  📋 Samling
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("tactics")}
+                  className={`${
+                    sidelineMode ? "min-h-[52px] px-4 rounded-xl text-sm" : "px-2.5 py-1 rounded text-xs"
+                  } font-display font-extrabold uppercase tracking-wider bg-[#facc15] hover:bg-yellow-300 text-slate-950 border border-yellow-200 shadow flex items-center gap-1`}
+                >
+                  <Compass className="w-4 h-4" />
+                  <span>Rörelse (Anfall / Försvar)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    rainLock ? handleRainUnlockTap() : handleActivateRainLock()
+                  }
+                  className={`${
+                    sidelineMode ? "min-h-[52px] px-3.5 rounded-xl" : "px-2.5 py-1 rounded"
+                  } font-display font-extrabold uppercase tracking-wider text-xs border flex items-center gap-1 transition active:scale-95 ${
+                    rainLock
+                      ? "bg-sky-400 text-slate-950 border-sky-200 shadow"
+                      : "bg-[#040a14] text-sky-200 border-sky-400/40 hover:bg-[#0f2547]"
+                  }`}
+                >
+                  {rainLock ? (
+                    <Lock className="w-3.5 h-3.5" />
+                  ) : (
+                    <CloudRain className="w-3.5 h-3.5 text-sky-300" />
+                  )}
+                  <span>{rainLock ? "🔒 Regnlås PÅ" : "🌧️ Regnlås"}</span>
+                </button>
+
+                {!sidelineMode && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("setup")}
+                    className="px-2.5 py-1 rounded font-display font-bold uppercase tracking-wider text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40"
+                  >
+                    🔧 Ändra Uppställning / Trupp
+                  </button>
+                )}
               </div>
+
+              {/* Höger: Formationsväljare (1-4-1 default) + Vy-switch (2D Plan / CM Tabell) */}
+              {!sidelineMode && (
+                <div className="flex items-center gap-1.5">
+                  {matchState.config.format === "7v7" && (
+                    <div className="flex items-center bg-[#040a14] rounded p-0.5 border border-sky-400/25">
+                      {FORMATIONS_7V7.map((fmt) => (
+                        <button
+                          key={fmt}
+                          type="button"
+                          onClick={() => handleChangeFormation(fmt)}
+                          className={`px-2 py-0.5 rounded text-[11px] font-mono-cm font-bold transition ${
+                            currentFormation === fmt
+                              ? "bg-[#005cb9] text-white"
+                              : "text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {fmt}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPitchViewMode((m) => (m === "pitch" ? "table" : "pitch"))
+                    }
+                    className="px-2.5 py-1 rounded bg-[#040a14] border border-sky-400/30 text-sky-200 hover:text-white text-xs font-display font-bold uppercase tracking-wider flex items-center gap-1"
+                  >
+                    <ListFilter className="w-3.5 h-3.5 text-[#facc15]" />
+                    <span>{pitchViewMode === "pitch" ? "Tabell" : "2D Plan"}</span>
+                  </button>
+                </div>
+              )}
             </section>
 
             {/* ============================================================
@@ -3608,7 +3846,13 @@ export function VarmbolMatchApp({
                   </div>
                 </div>
 
-                <div className="cm-pitch-surface relative h-[480px] sm:h-[520px]">
+                <div
+                  className={`cm-pitch-surface relative ${
+                    sidelineMode
+                      ? "h-[500px] sm:h-[580px]"
+                      : "h-[480px] sm:h-[520px]"
+                  }`}
+                >
                 <div className="absolute inset-3 border border-white/25 rounded pointer-events-none" />
                 <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 h-px bg-white/25 pointer-events-none" />
                 <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border border-white/25 pointer-events-none" />
@@ -4985,6 +5229,8 @@ export function VarmbolMatchApp({
               pitchSlotIndex: m.player.pitchSlotIndex,
             }))}
             disabled={isReadOnlyFollower}
+            sidelineMode={sidelineMode}
+            rainLock={rainLock}
           />
         )}
 
@@ -5155,7 +5401,7 @@ export function VarmbolMatchApp({
                   <button
                     type="button"
                     onClick={clearSubSelection}
-                    className="px-3 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-display font-bold uppercase text-xs"
+                    className="min-h-[52px] px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-display font-bold uppercase text-xs"
                   >
                     Avbryt
                   </button>
@@ -5164,7 +5410,7 @@ export function VarmbolMatchApp({
                     <button
                       type="button"
                       onClick={handleSwapTwoPitchPlayers}
-                      className="px-3.5 py-2.5 rounded-lg bg-[#005cb9] hover:bg-sky-600 text-white font-display font-extrabold uppercase text-xs border border-sky-300"
+                      className="min-h-[52px] px-4 py-2.5 rounded-xl bg-[#005cb9] hover:bg-sky-600 text-white font-display font-extrabold uppercase text-xs border border-sky-300"
                     >
                       Skifta plats i {currentFormation}
                     </button>
@@ -5174,7 +5420,7 @@ export function VarmbolMatchApp({
                     type="button"
                     disabled={!canExecuteSub}
                     onClick={handleConfirmSubstitution}
-                    className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-lg font-display font-extrabold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition active:scale-95 ${
+                    className={`flex-1 sm:flex-initial min-h-[52px] px-5 py-2.5 rounded-xl font-display font-extrabold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition active:scale-95 ${
                       canExecuteSub
                         ? "bg-emerald-400 hover:bg-emerald-300 text-slate-950 shadow-[0_0_25px_rgba(52,211,153,0.6)]"
                         : "bg-slate-800 text-slate-400 cursor-not-allowed"

@@ -30,6 +30,8 @@ interface TacticalMovementViewProps {
   onSelectFormation: (fmt: TacticalFormation) => void;
   pitchPlayers: PitchPlayerToken[];
   disabled?: boolean;
+  sidelineMode?: boolean;
+  rainLock?: boolean;
 }
 
 interface SlotMove {
@@ -1899,6 +1901,8 @@ export function TacticalMovementView({
   onSelectFormation,
   pitchPlayers,
   disabled = false,
+  sidelineMode = false,
+  rainLock = false,
 }: TacticalMovementViewProps) {
   const boardFormation: "1-4-1" | "1-1-3-1" =
     currentFormation === "1-1-3-1" ? "1-1-3-1" : "1-4-1";
@@ -2105,6 +2109,7 @@ export function TacticalMovementView({
   ) {
     e.stopPropagation();
     setSelectedSlotIndex(slotIndex);
+    if (rainLock) return;
     setIsAutoPlaying(false);
     setDraggingPlayerSlot(slotIndex);
     dragStartScreenRef.current = {
@@ -2158,6 +2163,7 @@ export function TacticalMovementView({
   }
 
   function handlePitchPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (rainLock) return;
     const target = e.target as HTMLElement;
     if (target.closest("[data-player-token='true']")) {
       return;
@@ -2201,29 +2207,31 @@ export function TacticalMovementView({
           TOPPKORT: VÄXLA FORMATION DIREKT (1-4-1 LARS VS 1-1-3-1 JOCKE)
          ============================================================ */}
       <section className="cm-bevel rounded-xl p-3.5 border border-[#facc15]/60 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[10px] uppercase tracking-wider">
-              <Compass className="w-3.5 h-3.5" />
-              <span>Interaktiv Rörelse- & Taktiktavla · Dra boll & gubbar!</span>
+        {!sidelineMode && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-[10px] uppercase tracking-wider">
+                <Compass className="w-3.5 h-3.5" />
+                <span>Interaktiv Rörelse- & Taktiktavla · Dra boll & gubbar!</span>
+              </div>
+              <h2 className="font-display font-extrabold text-lg sm:text-xl uppercase text-white mt-1">
+                Hur vi springer i {boardFormation} (KAIK-matchen)
+              </h2>
+              <p className="text-xs text-sky-100/90">
+                Dra <strong>bollen ⚽</strong> så rör sig hela laget i takt — eller tryck på{" "}
+                <strong>🔓 Frigör gubbar</strong> (eller dra direkt i valfri spelare!) för att ställa upp dem exakt som du vill visa!
+              </p>
             </div>
-            <h2 className="font-display font-extrabold text-lg sm:text-xl uppercase text-white mt-1">
-              Hur vi springer i {boardFormation} (KAIK-matchen)
-            </h2>
-            <p className="text-xs text-sky-100/90">
-              Dra <strong>bollen ⚽</strong> så rör sig hela laget i takt — eller tryck på{" "}
-              <strong>🔓 Frigör gubbar</strong> (eller dra direkt i valfri spelare!) för att ställa upp dem exakt som du vill visa!
-            </p>
           </div>
-        </div>
+        )}
 
         {/* Stor tydlig uppställnings-toggle som även byter live-formationen */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             type="button"
-            disabled={disabled}
+            disabled={disabled || rainLock}
             onClick={() => handleSwitchBoardFormation("1-4-1")}
-            className={`p-3 rounded-xl border-2 text-left transition active:scale-[0.99] ${
+            className={`p-3 min-h-[52px] rounded-xl border-2 text-left transition active:scale-[0.99] disabled:opacity-60 ${
               boardFormation === "1-4-1"
                 ? "bg-[#005cb9]/50 border-[#facc15] shadow-[0_0_20px_rgba(250,204,21,0.3)]"
                 : "bg-[#050e1d] border-sky-400/25 hover:border-sky-400/50"
@@ -2243,17 +2251,19 @@ export function TacticalMovementView({
                 {boardFormation === "1-4-1" ? "✓ AKTIV I MATCHEN" : "BYT TILL 1-4-1"}
               </span>
             </div>
-            <p className="text-xs text-slate-200 mt-1">
-              <strong>VM + CM Vänster</strong> kämpar ihop till vänster ·{" "}
-              <strong>HM + CM Höger</strong> kämpar ihop till höger. Går yttern fram säkrar CM upp bakom!
-            </p>
+            {!sidelineMode && (
+              <p className="text-xs text-slate-200 mt-1">
+                <strong>VM + CM Vänster</strong> kämpar ihop till vänster ·{" "}
+                <strong>HM + CM Höger</strong> kämpar ihop till höger. Går yttern fram säkrar CM upp bakom!
+              </p>
+            )}
           </button>
 
           <button
             type="button"
-            disabled={disabled}
+            disabled={disabled || rainLock}
             onClick={() => handleSwitchBoardFormation("1-1-3-1")}
-            className={`p-3 rounded-xl border-2 text-left transition active:scale-[0.99] ${
+            className={`p-3 min-h-[52px] rounded-xl border-2 text-left transition active:scale-[0.99] disabled:opacity-60 ${
               boardFormation === "1-1-3-1"
                 ? "bg-[#005cb9]/50 border-[#facc15] shadow-[0_0_20px_rgba(250,204,21,0.3)]"
                 : "bg-[#050e1d] border-sky-400/25 hover:border-sky-400/50"
@@ -2275,10 +2285,12 @@ export function TacticalMovementView({
                   : "BYT TILL 1-1-3-1"}
               </span>
             </div>
-            <p className="text-xs text-slate-200 mt-1">
-              <strong>Back (LIB) + Ankare (DM)</strong> låser mitten ·{" "}
-              <strong>VM–CM–HM</strong> fyller på bakom <strong>Forward (FW)</strong>.
-            </p>
+            {!sidelineMode && (
+              <p className="text-xs text-slate-200 mt-1">
+                <strong>Back (LIB) + Ankare (DM)</strong> låser mitten ·{" "}
+                <strong>VM–CM–HM</strong> fyller på bakom <strong>Forward (FW)</strong>.
+              </p>
+            )}
           </button>
         </div>
 
@@ -2292,6 +2304,7 @@ export function TacticalMovementView({
               </span>
               <button
                 type="button"
+                disabled={rainLock}
                 onClick={() => {
                   setPossessionMode("us");
                   if (!customBall) {
@@ -2301,7 +2314,7 @@ export function TacticalMovementView({
                     });
                   }
                 }}
-                className={`px-2.5 py-1 rounded-lg font-display font-extrabold text-xs uppercase border transition ${
+                className={`px-3 py-2 min-h-[52px] rounded-lg font-display font-extrabold text-xs uppercase border transition disabled:opacity-60 ${
                   possessionMode === "us"
                     ? "bg-emerald-400 text-slate-950 border-emerald-200 shadow"
                     : "bg-[#061224] text-slate-300 border-white/15 hover:text-white"
@@ -2311,6 +2324,7 @@ export function TacticalMovementView({
               </button>
               <button
                 type="button"
+                disabled={rainLock}
                 onClick={() => {
                   setPossessionMode("opponent");
                   if (!customBall) {
@@ -2320,7 +2334,7 @@ export function TacticalMovementView({
                     });
                   }
                 }}
-                className={`px-2.5 py-1 rounded-lg font-display font-extrabold text-xs uppercase border transition ${
+                className={`px-3 py-2 min-h-[52px] rounded-lg font-display font-extrabold text-xs uppercase border transition disabled:opacity-60 ${
                   possessionMode === "opponent"
                     ? "bg-amber-400 text-slate-950 border-amber-200 shadow"
                     : "bg-[#061224] text-slate-300 border-white/15 hover:text-white"
@@ -2334,8 +2348,9 @@ export function TacticalMovementView({
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
+                disabled={rainLock}
                 onClick={handleToggleFreeMoveMode}
-                className={`px-3 py-1 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border flex items-center gap-1.5 transition active:scale-95 ${
+                className={`px-3.5 py-2 min-h-[52px] rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border flex items-center gap-1.5 transition active:scale-95 disabled:opacity-60 ${
                   isFreeMoveUnlocked
                     ? "bg-[#facc15] text-slate-950 border-yellow-200 shadow-[0_0_15px_rgba(250,204,21,0.5)]"
                     : "bg-[#0f2547] text-[#facc15] border-[#facc15]/50 hover:bg-[#163463]"
@@ -2356,12 +2371,13 @@ export function TacticalMovementView({
 
               <button
                 type="button"
+                disabled={rainLock}
                 onClick={() => {
                   setIsFreeMoveUnlocked(false);
                   setManualPlayerCoords({});
                   setIsAutoPlaying((prev) => !prev);
                 }}
-                className={`px-2.5 py-1 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border flex items-center gap-1.5 transition active:scale-95 ${
+                className={`px-3 py-2 min-h-[52px] rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border flex items-center gap-1.5 transition active:scale-95 disabled:opacity-60 ${
                   isAutoPlaying
                     ? "bg-emerald-400 text-slate-950 border-emerald-200 shadow-[0_0_15px_rgba(52,211,153,0.5)]"
                     : "bg-[#061224] text-emerald-300 border-emerald-400/40 hover:bg-emerald-950/60"
@@ -2383,13 +2399,14 @@ export function TacticalMovementView({
               {(customBall || hasManualPlayers) && (
                 <button
                   type="button"
+                  disabled={rainLock}
                   onClick={() => {
                     setIsAutoPlaying(false);
                     setIsFreeMoveUnlocked(false);
                     setManualPlayerCoords({});
                     setCustomBall(null);
                   }}
-                  className="px-2.5 py-1 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border bg-[#061224] text-sky-200 border-sky-400/30 hover:bg-[#0f2547] flex items-center gap-1"
+                  className="px-3 py-2 min-h-[52px] rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border bg-[#061224] text-sky-200 border-sky-400/30 hover:bg-[#0f2547] flex items-center gap-1 disabled:opacity-60"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Återställ</span>
@@ -2412,6 +2429,7 @@ export function TacticalMovementView({
                 <button
                   key={scen.id}
                   type="button"
+                  disabled={rainLock}
                   onClick={() => {
                     setIsAutoPlaying(false);
                     setIsFreeMoveUnlocked(false);
@@ -2422,7 +2440,7 @@ export function TacticalMovementView({
                       setPossessionMode(scen.defaultPossession);
                     }
                   }}
-                  className={`py-2 px-2 rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border transition text-center active:scale-95 ${
+                  className={`py-2.5 px-2 min-h-[52px] rounded-lg font-display font-extrabold text-xs uppercase tracking-wide border transition text-center active:scale-95 disabled:opacity-60 ${
                     active
                       ? "bg-[#facc15] text-slate-950 border-yellow-200 shadow-[0_0_15px_rgba(250,204,21,0.35)]"
                       : "bg-[#061224] text-sky-200 border-sky-400/30 hover:bg-[#0f2547]"
@@ -2493,7 +2511,11 @@ export function TacticalMovementView({
           onPointerMove={handlePitchPointerMove}
           onPointerUp={handlePitchPointerUp}
           onPointerCancel={handlePitchPointerUp}
-          className="cm-pitch-surface relative h-[480px] sm:h-[530px] select-none overflow-hidden touch-none cursor-grab active:cursor-grabbing"
+          className={`cm-pitch-surface relative select-none overflow-hidden touch-none ${
+            sidelineMode
+              ? "h-[520px] sm:h-[600px]"
+              : "h-[480px] sm:h-[530px]"
+          } ${rainLock ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"}`}
         >
           {/* Planlinjer */}
           <div className="absolute inset-3 border border-white/25 rounded pointer-events-none" />
@@ -2827,146 +2849,178 @@ export function TacticalMovementView({
       </section>
 
       {/* ============================================================
-          SPELAR-SPOTLIGHT: VAD GÖR JUST DEN HÄR SPELAREN I ANFALL & FÖRSVAR?
+          SPELAR-SPOTLIGHT & 3 KOM-IHÅG (Ihopfällda i Sidlinjeläge för noll brus)
          ============================================================ */}
-      <section className="cm-bevel rounded-xl p-3.5 border-2 border-[#facc15] space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-1 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-xs uppercase">
-              {selectedMove.code}
-            </span>
-            <div>
-              <h3 className="font-display font-extrabold text-base sm:text-lg uppercase text-white">
-                {selectedPlayer ? `${selectedPlayer.name} · ` : ""}
-                {selectedMove.roleTitle}
-              </h3>
-              <p className="text-xs font-mono-cm text-sky-300">
-                {selectedMove.partnerLabel}
-              </p>
+      {sidelineMode ? (
+        <details className="cm-bevel rounded-xl p-3 border border-sky-400/30">
+          <summary className="cursor-pointer font-display font-extrabold text-xs sm:text-sm uppercase tracking-wider text-[#facc15]">
+            📖 Visa Spelar-Spotlight & 3 kom-ihåg-regler ({selectedMove.code})
+          </summary>
+          <div className="mt-3 space-y-3">
+            <div className="p-2.5 rounded-lg bg-[#050e1d] border border-white/10 text-xs sm:text-sm text-amber-200 font-medium">
+              <strong>{selectedMove.code} ({selectedMove.roleTitle}):</strong> {selectedMove.scenarioNote}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="p-3 rounded-lg bg-emerald-950/50 border border-emerald-400/40 space-y-1">
+                <div className="font-display font-extrabold text-xs uppercase text-emerald-300 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>När vi anfaller (Vi har bollen)</span>
+                </div>
+                <p className="text-xs sm:text-sm text-white leading-relaxed">
+                  {selectedMove.attackTask}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-sky-950/50 border border-sky-400/40 space-y-1">
+                <div className="font-display font-extrabold text-xs uppercase text-sky-300 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>När vi försvarar (Motståndaren har bollen)</span>
+                </div>
+                <p className="text-xs sm:text-sm text-white leading-relaxed">
+                  {selectedMove.defenseTask}
+                </p>
+              </div>
             </div>
           </div>
-
-          {/* Snabbknappar för att klicka runt mellan positionerna */}
-          <div className="flex items-center gap-1 flex-wrap">
-            {activeScenario.moves.map((m) => {
-              const p = playerBySlot.get(m.slotIndex);
-              return (
-                <button
-                  key={m.slotIndex}
-                  type="button"
-                  onClick={() => setSelectedSlotIndex(m.slotIndex)}
-                  className={`px-2 py-1 rounded font-mono-cm font-extrabold text-[10px] uppercase border transition ${
-                    m.slotIndex === selectedMove.slotIndex
-                      ? "bg-[#facc15] text-slate-950 border-yellow-200"
-                      : "bg-[#050e1d] text-sky-200 border-sky-400/25"
-                  }`}
-                >
-                  {m.code}
-                  {p ? ` (${p.name})` : ""}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="p-2.5 rounded-lg bg-[#050e1d] border border-white/10 text-xs sm:text-sm text-amber-200 font-medium">
-          <strong>I detta läge:</strong> {selectedMove.scenarioNote}
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <div className="p-3 rounded-lg bg-emerald-950/50 border border-emerald-400/40 space-y-1">
-            <div className="font-display font-extrabold text-xs uppercase text-emerald-300 flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" />
-              <span>När vi anfaller (Vi har bollen)</span>
-            </div>
-            <p className="text-xs sm:text-sm text-white leading-relaxed">
-              {selectedMove.attackTask}
-            </p>
-          </div>
-
-          <div className="p-3 rounded-lg bg-sky-950/50 border border-sky-400/40 space-y-1">
-            <div className="font-display font-extrabold text-xs uppercase text-sky-300 flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5" />
-              <span>När vi försvarar (Motståndaren har bollen)</span>
-            </div>
-            <p className="text-xs sm:text-sm text-white leading-relaxed">
-              {selectedMove.defenseTask}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ============================================================
-          SNABB JÄMFÖRELSE: 3 ENKLA REGLER FÖR KILLARNA ATT MINNAS
-         ============================================================ */}
-      <section className="cm-bevel rounded-xl p-3.5 space-y-2.5">
-        <h3 className="font-display font-extrabold text-sm sm:text-base uppercase tracking-wider text-[#facc15] flex items-center gap-1.5">
-          <Target className="w-4 h-4" />
-          <span>
-            3 enkla kom-ihåg till laget i{" "}
-            {boardFormation === "1-4-1"
-              ? "1-4-1 (Lars Sidopar)"
-              : "1-1-3-1 (Jockes Ankare)"}
-          </span>
-        </h3>
-
-        {boardFormation === "1-4-1" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div className="p-3 rounded-lg bg-[#050e1d] border border-[#facc15]/40">
-              <div className="font-display font-extrabold text-xs uppercase text-[#facc15]">
-                1. Vänsterpar & Högerpar
+        </details>
+      ) : (
+        <>
+          <section className="cm-bevel rounded-xl p-3.5 border-2 border-[#facc15] space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-1 rounded bg-[#facc15] text-slate-950 font-mono-cm font-extrabold text-xs uppercase">
+                  {selectedMove.code}
+                </span>
+                <div>
+                  <h3 className="font-display font-extrabold text-base sm:text-lg uppercase text-white">
+                    {selectedPlayer ? `${selectedPlayer.name} · ` : ""}
+                    {selectedMove.roleTitle}
+                  </h3>
+                  <p className="text-xs font-mono-cm text-sky-300">
+                    {selectedMove.partnerLabel}
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                <strong>VM + CM Vänster</strong> äger vänstersidan ihop.{" "}
-                <strong>HM + CM Höger</strong> äger högersidan ihop. Ni lämnar aldrig er kompis ensam på kanten!
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-[#050e1d] border border-sky-400/40">
-              <div className="font-display font-extrabold text-xs uppercase text-sky-300">
-                2. En går fram → En säkrar bakom
+
+              {/* Snabbknappar för att klicka runt mellan positionerna */}
+              <div className="flex items-center gap-1 flex-wrap">
+                {activeScenario.moves.map((m) => {
+                  const p = playerBySlot.get(m.slotIndex);
+                  return (
+                    <button
+                      key={m.slotIndex}
+                      type="button"
+                      onClick={() => setSelectedSlotIndex(m.slotIndex)}
+                      className={`px-2 py-1 rounded font-mono-cm font-extrabold text-[10px] uppercase border transition ${
+                        m.slotIndex === selectedMove.slotIndex
+                          ? "bg-[#facc15] text-slate-950 border-yellow-200"
+                          : "bg-[#050e1d] text-sky-200 border-sky-400/25"
+                      }`}
+                    >
+                      {m.code}
+                      {p ? ` (${p.name})` : ""}
+                    </button>
+                  );
+                })}
               </div>
-              <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                Om yttern springer hela vägen fram i anfall (eller kliver i hög press) stannar innermittfältaren snett bakom på samma sida — <strong>lagom långt bak</strong> (inte i knät på backen).
-              </p>
             </div>
-            <div className="p-3 rounded-lg bg-[#050e1d] border border-emerald-400/40">
-              <div className="font-display font-extrabold text-xs uppercase text-emerald-300">
-                3. Bortre yttern in i boxen / stänger mitten
+
+            <div className="p-2.5 rounded-lg bg-[#050e1d] border border-white/10 text-xs sm:text-sm text-amber-200 font-medium">
+              <strong>I detta läge:</strong> {selectedMove.scenarioNote}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="p-3 rounded-lg bg-emerald-950/50 border border-emerald-400/40 space-y-1">
+                <div className="font-display font-extrabold text-xs uppercase text-emerald-300 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>När vi anfaller (Vi har bollen)</span>
+                </div>
+                <p className="text-xs sm:text-sm text-white leading-relaxed">
+                  {selectedMove.attackTask}
+                </p>
               </div>
-              <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                Anfaller vi på vänsterkanten smyger högeryttern in på bortre stolpen. Har motståndaren bollen där kliver bortre yttern in och bevakar spelvändning!
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div className="p-3 rounded-lg bg-[#050e1d] border border-emerald-400/40">
-              <div className="font-display font-extrabold text-xs uppercase text-emerald-300">
-                1. Ankaret (DM) stänger mitten
+
+              <div className="p-3 rounded-lg bg-sky-950/50 border border-sky-400/40 space-y-1">
+                <div className="font-display font-extrabold text-xs uppercase text-sky-300 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>När vi försvarar (Motståndaren har bollen)</span>
+                </div>
+                <p className="text-xs sm:text-sm text-white leading-relaxed">
+                  {selectedMove.defenseTask}
+                </p>
               </div>
-              <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                <strong>DM</strong> spelar precis framför vår back (<strong>LIB</strong>). I anfall stannar DM utanför straffområdet som trygg vägg och stoppar kontringar!
-              </p>
             </div>
-            <div className="p-3 rounded-lg bg-[#050e1d] border border-sky-400/40">
-              <div className="font-display font-extrabold text-xs uppercase text-sky-300">
-                2. Trean (VM–CM–HM) fyller på
+          </section>
+
+          <section className="cm-bevel rounded-xl p-3.5 space-y-2.5">
+            <h3 className="font-display font-extrabold text-sm sm:text-base uppercase tracking-wider text-[#facc15] flex items-center gap-1.5">
+              <Target className="w-4 h-4" />
+              <span>
+                3 enkla kom-ihåg till laget i{" "}
+                {boardFormation === "1-4-1"
+                  ? "1-4-1 (Lars Sidopar)"
+                  : "1-1-3-1 (Jockes Ankare)"}
+              </span>
+            </h3>
+
+            {boardFormation === "1-4-1" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="p-3 rounded-lg bg-[#050e1d] border border-[#facc15]/40">
+                  <div className="font-display font-extrabold text-xs uppercase text-[#facc15]">
+                    1. Vänsterpar & Högerpar
+                  </div>
+                  <p className="text-xs text-slate-200 mt-1 leading-relaxed">
+                    <strong>VM + CM Vänster</strong> äger vänstersidan ihop.{" "}
+                    <strong>HM + CM Höger</strong> äger högersidan ihop. Ni lämnar aldrig er kompis ensam på kanten!
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-[#050e1d] border border-sky-400/40">
+                  <div className="font-display font-extrabold text-xs uppercase text-sky-300">
+                    2. En går fram → En säkrar bakom
+                  </div>
+                  <p className="text-xs text-slate-200 mt-1 leading-relaxed">
+                    Om yttern springer hela vägen fram i anfall (eller kliver i hög press) stannar innermittfältaren snett bakom på samma sida — <strong>lagom långt bak</strong> (inte i knät på backen).
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-[#050e1d] border border-emerald-400/40">
+                  <div className="font-display font-extrabold text-xs uppercase text-emerald-300">
+                    3. Bortre yttern in i boxen / stänger mitten
+                  </div>
+                  <p className="text-xs text-slate-200 mt-1 leading-relaxed">
+                    Anfaller vi på vänsterkanten smyger högeryttern in på bortre stolpen. Har motståndaren bollen där kliver bortre yttern in och bevakar spelvändning!
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                När vi vinner bollen fyller <strong>VM, CM och HM</strong> på framåt tillsammans med vår <strong>Forward (FW)</strong>.
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-[#050e1d] border border-[#facc15]/40">
-              <div className="font-display font-extrabold text-xs uppercase text-[#facc15]">
-                3. Yttrarna måste jobba hem
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="p-3 rounded-lg bg-[#050e1d] border border-emerald-400/40">
+                  <div className="font-display font-extrabold text-xs uppercase text-emerald-300">
+                    1. Ankaret (DM) stänger mitten
+                  </div>
+                  <p className="text-xs text-slate-200 mt-1 leading-relaxed">
+                    <strong>DM</strong> spelar precis framför vår back (<strong>LIB</strong>). I anfall stannar DM utanför straffområdet som trygg vägg och stoppar kontringar!
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-[#050e1d] border border-sky-400/40">
+                  <div className="font-display font-extrabold text-xs uppercase text-sky-300">
+                    2. Trean (VM–CM–HM) fyller på
+                  </div>
+                  <p className="text-xs text-slate-200 mt-1 leading-relaxed">
+                    När vi vinner bollen fyller <strong>VM, CM och HM</strong> på framåt tillsammans med vår <strong>Forward (FW)</strong>.
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-[#050e1d] border border-[#facc15]/40">
+                  <div className="font-display font-extrabold text-xs uppercase text-[#facc15]">
+                    3. Yttrarna måste jobba hem
+                  </div>
+                  <p className="text-xs text-slate-200 mt-1 leading-relaxed">
+                    Eftersom vi har 1 back och 1 ankare i mitten måste <strong>VM och HM</strong> springa hem på sina kanter när motståndaren har bollen!
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                Eftersom vi har 1 back och 1 ankare i mitten måste <strong>VM och HM</strong> springa hem på sina kanter när motståndaren har bollen!
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }

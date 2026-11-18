@@ -2506,6 +2506,15 @@ export function VarmbolMatchApp({
                   </button>
                 )}
 
+                <a
+                  href="/design"
+                  className="px-2.5 py-1.5 rounded border font-mono-cm font-extrabold text-[10px] sm:text-xs uppercase flex items-center gap-1 transition active:scale-95 bg-emerald-400 text-slate-950 border-emerald-200 shadow-[0_0_10px_rgba(52,211,153,0.35)] hover:bg-emerald-300"
+                  title="Öppna 3 nya avskalade designförslag (1. Svenskalag · 2. Apple/Fixtured · 3. Sideline Clean)"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>🎨 Design (3)</span>
+                </a>
+
                 <button
                   type="button"
                   onClick={handleToggleSidelineMode}
